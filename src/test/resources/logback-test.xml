@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/base.xml" />
+    
+    <!-- Configure console output -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    
+    <!-- Configure test file output -->
+    <appender name="TEST_FILE" class="ch.qos.logback.core.FileAppender">
+        <file>target/test.log</file>
+        <append>false</append>
+        <immediateFlush>true</immediateFlush>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    
+    <!-- Reduce noise from third-party libraries -->
+    <logger name="org.hibernate" level="WARN" />
+    <logger name="org.hibernate.SQL" level="WARN" />
+    <logger name="org.hibernate.type.descriptor.sql" level="WARN" />
+    <logger name="org.springframework" level="WARN" />
+    <logger name="org.apache" level="WARN" />
+    <logger name="org.h2" level="WARN" />
+    
+    <!-- Set application logging level -->
+    <logger name="com.docmgmt" level="INFO" />
+    
+    <!-- Configure more detailed logs for test classes -->
+    <logger name="com.docmgmt.controller" level="DEBUG" />
+    <logger name="com.docmgmt.service" level="DEBUG" />
+    
+    <!-- Root logger level -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="TEST_FILE" />
+    </root>
+    
+    <!-- Special CI profile settings -->
+    <springProfile name="ci">
+        <!-- More concise output for CI environments -->
+        <root level="WARN">
+            <appender-ref ref="CONSOLE" />
+            <appender-ref ref="TEST_FILE" />
+        </root>
+        
+        <!-- Keep application logging at INFO level -->
+        <logger name="com.docmgmt" level="INFO" />
+    </springProfile>
+</configuration>
+
