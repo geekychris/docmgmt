@@ -27,8 +27,17 @@ public class DocumentService extends AbstractSysObjectService<Document, Document
     @Transactional(readOnly = true)
     public List<Document> findAll() {
         List<Document> documents = super.findAll();
-        // Initialize tags collections
-        documents.forEach(doc -> doc.getTags().size());
+        // Initialize tags, contents collections, and parent version
+        documents.forEach(doc -> {
+            doc.getTags().size();
+            if (doc.getContents() != null) {
+                doc.getContents().size();
+            }
+            // Touch parent version to initialize it
+            if (doc.getParentVersion() != null) {
+                doc.getParentVersion().getName();
+            }
+        });
         return documents;
     }
     
@@ -41,10 +50,38 @@ public class DocumentService extends AbstractSysObjectService<Document, Document
     @Transactional(readOnly = true)
     public Document findById(Long id) {
         Document document = super.findById(id);
-        // Initialize tags collection
-        // Initialize tags collection
+        // Initialize tags, contents collections, and parent version
         document.getTags().size();
+        if (document.getContents() != null) {
+            document.getContents().size();
+        }
+        // Touch parent version to initialize it
+        if (document.getParentVersion() != null) {
+            document.getParentVersion().getName();
+        }
         return document;
+    }
+    
+    /**
+     * Override findAllLatestVersions to ensure collections are initialized
+     * @return List of latest version documents
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<Document> findAllLatestVersions() {
+        List<Document> documents = super.findAllLatestVersions();
+        // Initialize tags, contents collections, and parent version
+        documents.forEach(doc -> {
+            doc.getTags().size();
+            if (doc.getContents() != null) {
+                doc.getContents().size();
+            }
+            // Touch parent version to initialize it
+            if (doc.getParentVersion() != null) {
+                doc.getParentVersion().getName();
+            }
+        });
+        return documents;
     }
     
     /**

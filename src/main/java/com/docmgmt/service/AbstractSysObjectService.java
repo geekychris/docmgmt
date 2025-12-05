@@ -123,7 +123,21 @@ public abstract class AbstractSysObjectService<T extends SysObject, R extends Ba
     @Transactional
     public T createMajorVersion(Long id) {
         T entity = findById(id);
+        
+        // Find the highest existing major version for this document name
+        List<T> allVersions = repository.findByNameOrderByMajorVersionDescMinorVersionDesc(entity.getName());
+        int nextMajorVersion = entity.getMajorVersion() + 1;
+        
+        if (!allVersions.isEmpty()) {
+            int highestMajor = allVersions.get(0).getMajorVersion();
+            if (highestMajor >= nextMajorVersion) {
+                nextMajorVersion = highestMajor + 1;
+            }
+        }
+        
         T newVersion = (T) entity.createMajorVersion();
+        newVersion.setMajorVersion(nextMajorVersion);
+        newVersion.setMinorVersion(0);
         return repository.save(newVersion);
     }
 
@@ -136,7 +150,24 @@ public abstract class AbstractSysObjectService<T extends SysObject, R extends Ba
     @Transactional
     public T createMinorVersion(Long id) {
         T entity = findById(id);
+        
+        // Find the highest existing minor version for this major version
+        int targetMajorVersion = entity.getMajorVersion();
+        List<T> allVersions = repository.findByNameOrderByMajorVersionDescMinorVersionDesc(entity.getName());
+        
+        int nextMinorVersion = entity.getMinorVersion() + 1;
+        
+        // Check if there are any versions with the same major version
+        for (T version : allVersions) {
+            if (version.getMajorVersion().equals(targetMajorVersion)) {
+                if (version.getMinorVersion() >= nextMinorVersion) {
+                    nextMinorVersion = version.getMinorVersion() + 1;
+                }
+            }
+        }
+        
         T newVersion = (T) entity.createMinorVersion();
+        newVersion.setMinorVersion(nextMinorVersion);
         return repository.save(newVersion);
     }
 
