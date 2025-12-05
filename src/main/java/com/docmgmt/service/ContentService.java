@@ -4,7 +4,11 @@ import com.docmgmt.model.Content;
 import com.docmgmt.model.FileStore;
 import com.docmgmt.model.SysObject;
 import com.docmgmt.repository.ContentRepository;
+import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityNotFoundException;
+import jakarta.persistence.PersistenceContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,9 +26,14 @@ import java.util.UUID;
  */
 @Service
 public class ContentService {
+    
+    private static final Logger logger = LoggerFactory.getLogger(ContentService.class);
 
     private final ContentRepository contentRepository;
     private final FileStoreService fileStoreService;
+    
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Autowired
     public ContentService(ContentRepository contentRepository, FileStoreService fileStoreService) {
@@ -40,18 +49,8 @@ public class ContentService {
      */
     @Transactional(readOnly = true)
     public Content findById(Long id) {
-        Content content = contentRepository.findById(id)
+        return contentRepository.findByIdWithAssociations(id)
                 .orElseThrow(() -> new EntityNotFoundException("Content not found with ID: " + id));
-        
-        // Initialize associations to prevent lazy loading issues
-        if (content.getFileStore() != null) {
-            content.getFileStore().getName(); // Touch to initialize
-        }
-        if (content.getSysObject() != null) {
-            content.getSysObject().getName(); // Touch to initialize
-        }
-        
-        return content;
     }
 
     /**
@@ -122,12 +121,19 @@ public class ContentService {
                 if (Files.exists(filePath)) {
                     Files.delete(filePath);
                 }
+                
+                // Remove content from FileStore's collection to avoid orphan removal issues
+                FileStore fileStore = content.getFileStore();
+                if (fileStore != null) {
+                    fileStore.getContents().remove(content);
+                }
             }
         } catch (IOException e) {
             throw new RuntimeException("Failed to delete content file", e);
         }
         
         contentRepository.delete(content);
+        entityManager.flush(); // Ensure deletion is flushed to the database
     }
 
     /**

@@ -59,11 +59,16 @@ public class DocumentDTO extends BaseSysObjectDTO {
             dto.setTags(new HashSet<>(document.getTags()));
         }
         
-        // Map content
-        if (document.getContents() != null && !document.getContents().isEmpty()) {
-            dto.setContents(document.getContents().stream()
-                    .map(ContentDTO::fromEntity)
-                    .collect(Collectors.toList()));
+        // Map content - safely handle lazy-loaded collections
+        try {
+            if (document.getContents() != null && !document.getContents().isEmpty()) {
+                dto.setContents(document.getContents().stream()
+                        .map(ContentDTO::fromEntity)
+                        .collect(Collectors.toList()));
+            }
+        } catch (org.hibernate.LazyInitializationException e) {
+            // Contents not loaded - skip it
+            dto.setContents(null);
         }
         
         return dto;

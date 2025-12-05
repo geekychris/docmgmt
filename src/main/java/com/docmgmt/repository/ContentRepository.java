@@ -57,6 +57,14 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
     List<Content> findByFileStoreIsNull();
     
     /**
+     * Find content by ID with eager loading of associations
+     * @param id The content ID
+     * @return Optional containing the Content if found
+     */
+    @Query("SELECT c FROM Content c LEFT JOIN FETCH c.fileStore LEFT JOIN FETCH c.sysObject WHERE c.id = :id")
+    Optional<Content> findByIdWithAssociations(@Param("id") Long id);
+    
+    /**
      * Find content by content type
      * @param contentType The MIME type of the content
      * @return List of matching Content objects

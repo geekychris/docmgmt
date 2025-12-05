@@ -1,26 +1,28 @@
 package com.docmgmt.service;
 
-import com.docmgmt.BaseTest;
 import com.docmgmt.model.Content;
 import com.docmgmt.model.Document;
 import com.docmgmt.model.FileStore;
 import com.docmgmt.model.SysObject;
 import com.docmgmt.repository.ContentRepository;
 import com.docmgmt.util.TestDataBuilder;
+import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -30,15 +32,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.lenient;
 
-@SpringBootTest
-public class ContentServiceTest extends BaseTest {
+@ExtendWith(MockitoExtension.class)
+public class ContentServiceTest {
 
     @Mock
     private ContentRepository contentRepository;
 
     @Mock
     private FileStoreService fileStoreService;
+    
+    @Mock
+    private EntityManager entityManager;
 
     @InjectMocks
     private ContentService contentService;
@@ -52,16 +58,17 @@ public class ContentServiceTest extends BaseTest {
 
     @BeforeEach
     public void setUp() {
-        MockitoAnnotations.openMocks(this);
-
         // Create test document
         testDocument = TestDataBuilder.createDocument(1L, "Test Document", Document.DocumentType.REPORT, 1, 0);
 
         // Create test file store
         testFileStore = TestDataBuilder.createFileStore(1L, "Test FileStore", tempDir.toString(), FileStore.Status.ACTIVE);
 
-        // Configure fileStoreService mock
-        when(fileStoreService.findById(testFileStore.getId())).thenReturn(testFileStore);
+        // Inject the mocked EntityManager into ContentService
+        ReflectionTestUtils.setField(contentService, "entityManager", entityManager);
+
+        // Configure fileStoreService mock with lenient stubbing
+        lenient().when(fileStoreService.findById(testFileStore.getId())).thenReturn(testFileStore);
     }
 
     // ----- CONTENT CREATION TESTS -----
@@ -71,7 +78,7 @@ public class ContentServiceTest extends BaseTest {
         // Arrange
         Long id = 1L;
         Content content = TestDataBuilder.createDatabaseContent(id, "test-content", "text/plain", testDocument);
-        when(contentRepository.findById(id)).thenReturn(Optional.of(content));
+        when(contentRepository.findByIdWithAssociations(id)).thenReturn(Optional.of(content));
 
         // Act
         Content result = contentService.findById(id);
@@ -80,14 +87,14 @@ public class ContentServiceTest extends BaseTest {
         assertThat(result).isNotNull();
         assertThat(result.getId()).isEqualTo(id);
         assertThat(result.getName()).isEqualTo("test-content");
-        verify(contentRepository, times(1)).findById(id);
+        verify(contentRepository, times(1)).findByIdWithAssociations(id);
     }
 
     @Test
     void findById_whenNotExists_shouldThrowException() {
         // Arrange
         Long id = 999L;
-        when(contentRepository.findById(id)).thenReturn(Optional.empty());
+        when(contentRepository.findByIdWithAssociations(id)).thenReturn(Optional.empty());
 
         // Act & Assert
         assertThatThrownBy(() -> contentService.findById(id))
@@ -157,7 +164,7 @@ public class ContentServiceTest extends BaseTest {
         // Arrange
         Long id = 1L;
         Content content = TestDataBuilder.createDatabaseContent(id, "test-content", "text/plain", testDocument);
-        when(contentRepository.findById(id)).thenReturn(Optional.of(content));
+        when(contentRepository.findByIdWithAssociations(id)).thenReturn(Optional.of(content));
 
         // Act
         contentService.delete(id);
@@ -170,16 +177,17 @@ public class ContentServiceTest extends BaseTest {
     void delete_whenContentInFileStore_shouldDeleteFileAndEntity() throws IOException {
         // Arrange
         Long id = 1L;
-        Content content = TestDataBuilder.createFileStoreContent(id, "test-content", "text/plain", testDocument, testFileStore);
+        
+        // Use the actual tempDir as the fileStore root path so getFullPath() works correctly
+        FileStore realFileStore = TestDataBuilder.createFileStore(1L, "Test FileStore", tempDir.toString(), FileStore.Status.ACTIVE);
+        Content content = TestDataBuilder.createFileStoreContent(id, "test-content", "text/plain", testDocument, realFileStore);
 
         // Create a real file for testing deletion
-        Path filePath = tempDir.resolve(content.getStoragePath());
+        Path filePath = Paths.get(realFileStore.getFullPath(content.getStoragePath()));
+        Files.createDirectories(filePath.getParent());
         Files.write(filePath, testData);
 
-        when(contentRepository.findById(id)).thenReturn(Optional.of(content));
-
-        // Mock the getFullPath method behavior
-        when(testFileStore.getFullPath(content.getStoragePath())).thenReturn(filePath.toString());
+        when(contentRepository.findByIdWithAssociations(id)).thenReturn(Optional.of(content));
 
         // Act
         contentService.delete(id);
@@ -266,7 +274,7 @@ public class ContentServiceTest extends BaseTest {
         Long id = 1L;
         Content content = TestDataBuilder.createDatabaseContent(id, "test-content", "text/plain", testDocument);
         content.setContent(testData);
-        when(contentRepository.findById(id)).thenReturn(Optional.of(content));
+        when(contentRepository.findByIdWithAssociations(id)).thenReturn(Optional.of(content));
 
         // Act
         byte[] result = contentService.getContentBytes(id);
@@ -279,14 +287,17 @@ public class ContentServiceTest extends BaseTest {
     void getContentBytes_fromFileStore_shouldReturnBytes() throws IOException {
         // Arrange
         Long id = 1L;
-        Content content = TestDataBuilder.createFileStoreContent(id, "test-content", "text/plain", testDocument, testFileStore);
+        
+        // Use the actual tempDir as the fileStore root path so getFullPath() works correctly
+        FileStore realFileStore = TestDataBuilder.createFileStore(1L, "Test FileStore", tempDir.toString(), FileStore.Status.ACTIVE);
+        Content content = TestDataBuilder.createFileStoreContent(id, "test-content", "text/plain", testDocument, realFileStore);
 
         // Create real file with test data
-        Path filePath = tempDir.resolve(content.getStoragePath());
+        Path filePath = Paths.get(realFileStore.getFullPath(content.getStoragePath()));
+        Files.createDirectories(filePath.getParent());
         Files.write(filePath, testData);
 
-        when(contentRepository.findById(id)).thenReturn(Optional.of(content));
-        when(testFileStore.getFullPath(content.getStoragePath())).thenReturn(filePath.toString());
+        when(contentRepository.findByIdWithAssociations(id)).thenReturn(Optional.of(content));
 
         // Act
         byte[] result = contentService.getContentBytes(id);
@@ -310,7 +321,7 @@ public class ContentServiceTest extends BaseTest {
         // Create expected result after move
         Content fileStoreContent = TestDataBuilder.createFileStoreContent(contentId, "test-content", "text/plain", testDocument, testFileStore);
 
-        when(contentRepository.findById(contentId)).thenReturn(Optional.of(databaseContent));
+        when(contentRepository.findByIdWithAssociations(contentId)).thenReturn(Optional.of(databaseContent));
         when(contentRepository.save(any(Content.class))).thenAnswer(invocation -> {
             Content savedContent = invocation.getArgument(0);
             savedContent.setId(contentId);
@@ -339,7 +350,7 @@ public class ContentServiceTest extends BaseTest {
         // Create content already in file store
         Content fileStoreContent = TestDataBuilder.createFileStoreContent(contentId, "test-content", "text/plain", testDocument, testFileStore);
 
-        when(contentRepository.findById(contentId)).thenReturn(Optional.of(fileStoreContent));
+        when(contentRepository.findByIdWithAssociations(contentId)).thenReturn(Optional.of(fileStoreContent));
 
         // Act & Assert
         assertThatThrownBy(() -> contentService.moveToFileStore(contentId, fileStoreId))

@@ -1,6 +1,5 @@
 package com.docmgmt.service;
 
-import com.docmgmt.BaseTest;
 import com.docmgmt.model.Content;
 import com.docmgmt.model.FileStore;
 import com.docmgmt.repository.ContentRepository;
@@ -9,11 +8,11 @@ import com.docmgmt.util.TestDataBuilder;
 import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.File;
 import java.io.IOException;
@@ -29,8 +28,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-@SpringBootTest
-public class FileStoreServiceTest extends BaseTest {
+@ExtendWith(MockitoExtension.class)
+public class FileStoreServiceTest {
 
     @Mock
     private FileStoreRepository fileStoreRepository;
@@ -46,7 +45,7 @@ public class FileStoreServiceTest extends BaseTest {
 
     @BeforeEach
     void initMocks() {
-        MockitoAnnotations.openMocks(this);
+        // No setup needed - Mockito extension handles mock initialization
     }
 
     @Test

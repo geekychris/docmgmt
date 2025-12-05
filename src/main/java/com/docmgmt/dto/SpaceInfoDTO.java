@@ -1,5 +1,6 @@
 package com.docmgmt.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -13,11 +14,27 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class SpaceInfoDTO {
     
+    @JsonProperty("id")
     private Long fileStoreId;
+    
+    @JsonProperty("name")
     private String fileStoreName;
+    
     private long totalSpace;
+    
+    @JsonProperty("availableSpace")
     private long usableSpace;
+    
     private long usedSpace;
+    
+    /**
+     * Get formatted available space
+     * @return human-readable string of available space
+     */
+    @JsonProperty("formattedAvailableSpace")
+    public String getFormattedAvailableSpace() {
+        return formatBytes(usableSpace);
+    }
     
     /**
      * Convert bytes to a human-readable format

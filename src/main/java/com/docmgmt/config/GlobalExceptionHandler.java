@@ -14,6 +14,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import java.io.IOException;
@@ -194,6 +195,29 @@ public class GlobalExceptionHandler {
         
         return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
     }
+    
+    /**
+     * Handle illegal state exceptions
+     * These typically indicate conflicts or invalid state transitions
+     */
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalState(
+            IllegalStateException ex, WebRequest request) {
+        
+        // Check if this is a conflict situation (e.g., cannot delete because of dependencies)
+        HttpStatus status = ex.getMessage() != null && ex.getMessage().toLowerCase().contains("cannot delete")
+                ? HttpStatus.CONFLICT
+                : HttpStatus.BAD_REQUEST;
+        
+        ErrorResponse errorResponse = new ErrorResponse(
+                status.value(),
+                status.getReasonPhrase(),
+                ex.getMessage(),
+                request.getDescription(false)
+        );
+        
+        return new ResponseEntity<>(errorResponse, status);
+    }
 
     /**
      * Handle IO exceptions
@@ -229,6 +253,23 @@ public class GlobalExceptionHandler {
         );
         
         return new ResponseEntity<>(errorResponse, HttpStatus.FORBIDDEN);
+    }
+    
+    /**
+     * Handle ResponseStatusException - thrown by controllers
+     */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ErrorResponse> handleResponseStatus(
+            ResponseStatusException ex, WebRequest request) {
+        
+        ErrorResponse errorResponse = new ErrorResponse(
+                ex.getStatusCode().value(),
+                ex.getStatusCode().toString(),
+                ex.getReason() != null ? ex.getReason() : ex.getMessage(),
+                request.getDescription(false)
+        );
+        
+        return new ResponseEntity<>(errorResponse, ex.getStatusCode());
     }
 
     /**

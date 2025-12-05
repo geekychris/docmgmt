@@ -360,7 +360,10 @@ public class DocumentControllerIntegrationTest {
      */
     private static String asJsonString(final Object obj) {
         try {
-            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(obj);
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+            mapper.disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+            return mapper.writeValueAsString(obj);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -371,7 +374,10 @@ public class DocumentControllerIntegrationTest {
      */
     private static <T> T fromJsonString(String json, Class<T> clazz) {
         try {
-            return new com.fasterxml.jackson.databind.ObjectMapper().readValue(json, clazz);
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+            mapper.disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+            return mapper.readValue(json, clazz);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

@@ -1,6 +1,5 @@
 package com.docmgmt.service;
 
-import com.docmgmt.BaseTest;
 import com.docmgmt.model.Content;
 import com.docmgmt.model.Document;
 import com.docmgmt.model.FileStore;
@@ -9,10 +8,10 @@ import com.docmgmt.util.TestDataBuilder;
 import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.*;
 
@@ -21,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-@SpringBootTest
-public class DocumentServiceTest extends BaseTest {
+@ExtendWith(MockitoExtension.class)
+public class DocumentServiceTest {
 
     @Mock
     private DocumentRepository documentRepository;
@@ -32,7 +31,7 @@ public class DocumentServiceTest extends BaseTest {
 
     @BeforeEach
     public void setUp() {
-        MockitoAnnotations.openMocks(this);
+        // No setup needed - Mockito extension handles mock initialization
     }
 
     // ----- BASIC CRUD TESTS -----

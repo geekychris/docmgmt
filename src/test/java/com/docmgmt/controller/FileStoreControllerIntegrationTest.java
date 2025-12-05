@@ -251,7 +251,7 @@ public class FileStoreControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id", is(fileStore.getId().intValue())))
                 .andExpect(jsonPath("$.name", is(fileStore.getName())))
-                .andExpect(jsonPath("$.availableSpace", greaterThan(0)))
+                .andExpect(jsonPath("$.availableSpace", greaterThan(0L)))
                 .andExpect(jsonPath("$.formattedAvailableSpace", notNullValue()));
     }
     
