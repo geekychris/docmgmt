@@ -215,6 +215,125 @@ public class DocumentManagementClient {
     }
     
     // =========================================================================
+    // Folder Operations
+    // =========================================================================
+    
+    /**
+     * Create a new folder.
+     * 
+     * @param folder Folder data
+     * @return Created folder
+     * @throws IOException If request fails
+     */
+    public Map<String, Object> createFolder(Map<String, Object> folder) throws IOException, InterruptedException {
+        String json = objectMapper.writeValueAsString(folder);
+        
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + "/folders"))
+            .header("Content-Type", "application/json")
+            .POST(BodyPublishers.ofString(json))
+            .build();
+        
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        
+        if (response.statusCode() >= 200 && response.statusCode() < 300) {
+            return objectMapper.readValue(response.body(), Map.class);
+        } else {
+            throw new IOException("Request failed with status: " + response.statusCode() + ", body: " + response.body());
+        }
+    }
+    
+    /**
+     * Add item to folder.
+     * 
+     * @param folderId Folder ID
+     * @param itemId SysObject ID to add
+     * @return Updated folder
+     * @throws IOException If request fails
+     */
+    public Map<String, Object> addItemToFolder(long folderId, long itemId) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + "/folders/" + folderId + "/items/" + itemId))
+            .POST(BodyPublishers.noBody())
+            .build();
+        
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        
+        if (response.statusCode() >= 200 && response.statusCode() < 300) {
+            return objectMapper.readValue(response.body(), Map.class);
+        } else {
+            throw new IOException("Request failed with status: " + response.statusCode() + ", body: " + response.body());
+        }
+    }
+    
+    /**
+     * Add child folder to parent.
+     * 
+     * @param parentId Parent folder ID
+     * @param childId Child folder ID
+     * @return Updated parent folder
+     * @throws IOException If request fails
+     */
+    public Map<String, Object> addChildFolder(long parentId, long childId) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + "/folders/" + parentId + "/children/" + childId))
+            .POST(BodyPublishers.noBody())
+            .build();
+        
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        
+        if (response.statusCode() >= 200 && response.statusCode() < 300) {
+            return objectMapper.readValue(response.body(), Map.class);
+        } else {
+            throw new IOException("Request failed with status: " + response.statusCode() + ", body: " + response.body());
+        }
+    }
+    
+    /**
+     * Get folder items.
+     * 
+     * @param folderId Folder ID
+     * @return List of items in folder
+     * @throws IOException If request fails
+     */
+    public List<Map<String, Object>> getFolderItems(long folderId) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + "/folders/" + folderId + "/items"))
+            .GET()
+            .build();
+        
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        
+        if (response.statusCode() == 200) {
+            return objectMapper.readValue(response.body(), List.class);
+        } else {
+            throw new IOException("Request failed with status: " + response.statusCode() + ", body: " + response.body());
+        }
+    }
+    
+    /**
+     * Get folder hierarchy.
+     * 
+     * @param folderId Root folder ID
+     * @return List of folders in hierarchy
+     * @throws IOException If request fails
+     */
+    public List<Map<String, Object>> getFolderHierarchy(long folderId) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + "/folders/" + folderId + "/hierarchy"))
+            .GET()
+            .build();
+        
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        
+        if (response.statusCode() == 200) {
+            return objectMapper.readValue(response.body(), List.class);
+        } else {
+            throw new IOException("Request failed with status: " + response.statusCode() + ", body: " + response.body());
+        }
+    }
+    
+    // =========================================================================
     // Content Operations
     // =========================================================================
     

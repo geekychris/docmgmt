@@ -167,6 +167,148 @@ class DocumentManagementClient:
         return response.json()
     
     # =========================================================================
+    # Folder Operations
+    # =========================================================================
+    
+    def create_folder(
+        self,
+        name: str,
+        path: Optional[str] = None,
+        description: Optional[str] = None,
+        is_public: bool = False,
+        permissions: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a new folder.
+        
+        Args:
+            name: Folder name
+            path: Optional folder path
+            description: Optional description
+            is_public: Whether folder is public
+            permissions: Optional list of permissions
+            
+        Returns:
+            Created folder with ID
+        """
+        payload = {"name": name}
+        if path:
+            payload["path"] = path
+        if description:
+            payload["description"] = description
+        payload["isPublic"] = is_public
+        if permissions:
+            payload["permissions"] = permissions
+        
+        response = self.session.post(f"{self.base_url}/folders", json=payload)
+        response.raise_for_status()
+        return response.json()
+    
+    def add_item_to_folder(self, folder_id: int, item_id: int) -> Dict[str, Any]:
+        """
+        Add a SysObject (document, folder, etc.) to a folder.
+        
+        Args:
+            folder_id: Folder ID
+            item_id: SysObject ID to add
+            
+        Returns:
+            Updated folder
+        """
+        response = self.session.post(
+            f"{self.base_url}/folders/{folder_id}/items/{item_id}"
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    def remove_item_from_folder(self, folder_id: int, item_id: int) -> Dict[str, Any]:
+        """
+        Remove a SysObject from a folder.
+        
+        Args:
+            folder_id: Folder ID
+            item_id: SysObject ID to remove
+            
+        Returns:
+            Updated folder
+        """
+        response = self.session.delete(
+            f"{self.base_url}/folders/{folder_id}/items/{item_id}"
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    def add_child_folder(self, parent_id: int, child_id: int) -> Dict[str, Any]:
+        """
+        Add a child folder to a parent folder.
+        
+        Args:
+            parent_id: Parent folder ID
+            child_id: Child folder ID
+            
+        Returns:
+            Updated parent folder
+        """
+        response = self.session.post(
+            f"{self.base_url}/folders/{parent_id}/children/{child_id}"
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    def get_folder(self, folder_id: int) -> Dict[str, Any]:
+        """
+        Get folder by ID.
+        
+        Args:
+            folder_id: Folder ID
+            
+        Returns:
+            Folder details
+        """
+        response = self.session.get(f"{self.base_url}/folders/{folder_id}")
+        response.raise_for_status()
+        return response.json()
+    
+    def get_folder_items(self, folder_id: int) -> List[Dict[str, Any]]:
+        """
+        Get all items in a folder.
+        
+        Args:
+            folder_id: Folder ID
+            
+        Returns:
+            List of items in the folder
+        """
+        response = self.session.get(f"{self.base_url}/folders/{folder_id}/items")
+        response.raise_for_status()
+        return response.json()
+    
+    def get_root_folders(self) -> List[Dict[str, Any]]:
+        """
+        Get all root folders (folders with no parent).
+        
+        Returns:
+            List of root folders
+        """
+        response = self.session.get(f"{self.base_url}/folders/roots")
+        response.raise_for_status()
+        return response.json()
+    
+    def get_folder_hierarchy(self, folder_id: int) -> List[Dict[str, Any]]:
+        """
+        Get entire folder hierarchy starting from a folder.
+        
+        Args:
+            folder_id: Root folder ID
+            
+        Returns:
+            List of all folders in the hierarchy
+        """
+        response = self.session.get(f"{self.base_url}/folders/{folder_id}/hierarchy")
+        response.raise_for_status()
+        return response.json()
+    
+    # =========================================================================
     # Content Operations
     # =========================================================================
     

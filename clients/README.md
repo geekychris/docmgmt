@@ -5,7 +5,9 @@ This directory contains client implementations for the Document Management Syste
 ## Available Clients
 
 ### Python Client
-Location: `python/docmgmt_client.py`
+Locations:
+- `python/docmgmt_client.py` - Main client library
+- `python/folder_demo.py` - Folder hierarchy demo
 
 ### Java Client
 Location: `java/src/main/java/com/docmgmt/client/DocumentManagementClient.java`
@@ -25,10 +27,16 @@ cd python
 pip install -r requirements.txt
 ```
 
-### Running the Demo
+### Running the Copy-on-Write Demo
 
 ```bash
 python docmgmt_client.py
+```
+
+### Running the Folder Hierarchy Demo
+
+```bash
+python folder_demo.py
 ```
 
 This will execute a complete copy-on-write versioning demo:
@@ -158,6 +166,15 @@ Both clients support:
 - Create major version (e.g., 1.0 → 2.0)
 - Create minor version (e.g., 1.0 → 1.1)
 - Get version history
+
+### Folder Operations
+- Create folders
+- Create hierarchical folder structures (parent/child)
+- Add documents to folders
+- Add folders to folders (nesting)
+- Get folder items
+- Get folder hierarchy
+- Document can exist in multiple folders
 
 ### Content Operations
 - Upload content (database or file store)

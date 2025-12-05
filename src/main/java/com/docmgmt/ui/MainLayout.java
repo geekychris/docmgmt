@@ -17,6 +17,7 @@ import com.vaadin.flow.theme.lumo.LumoUtility;
 import com.docmgmt.ui.views.ContentView;
 import com.docmgmt.ui.views.DocumentView;
 import com.docmgmt.ui.views.FileStoreView;
+import com.docmgmt.ui.views.FolderView;
 /**
  * The main layout for the application that contains the navigation drawer
  * and the header with the application title.
@@ -71,6 +72,7 @@ public class MainLayout extends AppLayout {
         Tabs tabs = new Tabs();
         tabs.add(
             createMenuTab(VaadinIcon.FOLDER_OPEN, "Documents", DocumentView.class),
+            createMenuTab(VaadinIcon.FOLDER_O, "Folders", FolderView.class),
             createMenuTab(VaadinIcon.DATABASE, "FileStores", FileStoreView.class),
             createMenuTab(VaadinIcon.FILE, "Content", ContentView.class)
         );
