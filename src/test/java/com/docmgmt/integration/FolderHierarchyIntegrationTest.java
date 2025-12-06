@@ -1,5 +1,6 @@
 package com.docmgmt.integration;
 
+import com.docmgmt.model.Article;
 import com.docmgmt.model.Document;
 import com.docmgmt.model.Folder;
 import com.docmgmt.model.SysObject;
@@ -90,15 +91,13 @@ public class FolderHierarchyIntegrationTest {
         folder = folderService.save(folder);
         
         // Create documents
-        Document doc1 = Document.builder()
+        Document doc1 = Article.builder()
             .name("Doc1")
-            .documentType(Document.DocumentType.REPORT)
             .build();
         doc1 = documentService.save(doc1);
         
-        Document doc2 = Document.builder()
+        Document doc2 = Article.builder()
             .name("Doc2")
-            .documentType(Document.DocumentType.MANUAL)
             .build();
         doc2 = documentService.save(doc2);
         
@@ -134,9 +133,8 @@ public class FolderHierarchyIntegrationTest {
         folder2 = folderService.save(folder2);
         
         // Create document
-        Document doc = Document.builder()
+        Document doc = Article.builder()
             .name("SharedDoc")
-            .documentType(Document.DocumentType.ARTICLE)
             .build();
         doc = documentService.save(doc);
         
@@ -169,9 +167,8 @@ public class FolderHierarchyIntegrationTest {
             .build();
         folder = folderService.save(folder);
         
-        Document doc = Document.builder()
+        Document doc = Article.builder()
             .name("TestDoc")
-            .documentType(Document.DocumentType.CONTRACT)
             .build();
         doc = documentService.save(doc);
         
@@ -343,9 +340,8 @@ public class FolderHierarchyIntegrationTest {
         subfolder = folderService.save(subfolder);
         
         // Create document
-        Document doc = Document.builder()
+        Document doc = Article.builder()
             .name("Doc")
-            .documentType(Document.DocumentType.OTHER)
             .build();
         doc = documentService.save(doc);
         

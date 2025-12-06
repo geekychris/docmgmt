@@ -115,12 +115,10 @@ public class ContentService {
         Content content = findById(id);
         
         try {
-            // If content is stored in file system, delete the file
+            // If content is stored in file system, delete the file and cleanup directories
             if (content.isStoredInFileStore()) {
-                Path filePath = Paths.get(content.getFileStore().getFullPath(content.getStoragePath()));
-                if (Files.exists(filePath)) {
-                    Files.delete(filePath);
-                }
+                // This will delete the file and recursively remove empty parent directories
+                content.cleanupStorage();
                 
                 // Remove content from FileStore's collection to avoid orphan removal issues
                 FileStore fileStore = content.getFileStore();
@@ -201,10 +199,16 @@ public class ContentService {
     }
 
     /**
-     * Generate a unique storage path for a file
-     * Uses a UUID to ensure uniqueness
+     * Generate a unique hierarchical storage path for a file
+     * Uses a UUID split into directory levels to avoid having too many files in one directory.
+     * Structure: aa/bb/cc/dd/aaaabbbb-cccc-dddd-eeee-ffffffffffff.ext
+     * Example: d4/3a/7b/2e/d43a7b2e-f9c4-4a1b-8e5d-123456789abc.pdf
+     * 
+     * This prevents filesystem performance degradation when storing large numbers of files.
+     * With 4 levels of 2-character directories, each directory will have at most ~256 entries.
+     * 
      * @param originalFilename The original filename
-     * @return A unique storage path
+     * @return A hierarchical storage path
      */
     private String generateStoragePath(String originalFilename) {
         String uuid = UUID.randomUUID().toString();
@@ -214,7 +218,19 @@ public class ContentService {
             extension = originalFilename.substring(originalFilename.lastIndexOf('.'));
         }
         
-        return uuid + extension;
+        // Remove hyphens from UUID for easier splitting
+        String uuidNoDashes = uuid.replace("-", "");
+        
+        // Create hierarchical path: split into 4 levels of 2 characters each
+        // This gives us 256^4 = 4.3 billion possible directory combinations
+        String level1 = uuidNoDashes.substring(0, 2);
+        String level2 = uuidNoDashes.substring(2, 4);
+        String level3 = uuidNoDashes.substring(4, 6);
+        String level4 = uuidNoDashes.substring(6, 8);
+        
+        // Construct path: dir1/dir2/dir3/dir4/originalUUID.ext
+        return String.format("%s/%s/%s/%s/%s%s", 
+            level1, level2, level3, level4, uuid, extension);
     }
 
     /**

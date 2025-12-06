@@ -1,8 +1,7 @@
 package com.docmgmt.ui.views;
 
-import com.docmgmt.model.Document;
-import com.docmgmt.model.Folder;
-import com.docmgmt.model.SysObject;
+import com.docmgmt.model.*;
+import com.docmgmt.model.Document.DocumentType;
 import com.docmgmt.service.DocumentService;
 import com.docmgmt.service.FolderService;
 import com.docmgmt.ui.MainLayout;
@@ -372,12 +371,9 @@ public class FolderView extends VerticalLayout {
             }
             
             try {
-                Document doc = Document.builder()
-                    .name(nameField.getValue())
-                    .documentType(typeCombo.getValue())
-                    .description(descField.getValue())
-                    .author(authorField.getValue())
-                    .build();
+                // Create the appropriate document subclass based on type
+                Document doc = createDocumentByType(typeCombo.getValue(), 
+                    nameField.getValue(), descField.getValue(), authorField.getValue());
                 
                 doc = documentService.save(doc);
                 folderService.addItemToFolder(currentFolder.getId(), doc);
@@ -478,5 +474,43 @@ public class FolderView extends VerticalLayout {
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
             }
         });
+    }
+    
+    /**
+     * Create a document subclass based on the document type
+     */
+    private Document createDocumentByType(DocumentType type, String name, String description, String author) {
+        Document doc;
+        switch (type) {
+            case ARTICLE:
+                doc = Article.builder().build();
+                break;
+            case REPORT:
+                doc = Report.builder().build();
+                break;
+            case CONTRACT:
+                doc = Contract.builder().build();
+                break;
+            case MANUAL:
+                doc = Manual.builder().build();
+                break;
+            case PRESENTATION:
+                doc = Presentation.builder().build();
+                break;
+            case TRIP_REPORT:
+                doc = TripReport.builder().build();
+                break;
+            default:
+                // Default to Article for OTHER type
+                doc = Article.builder().build();
+                break;
+        }
+        
+        // Set common fields
+        doc.setName(name);
+        doc.setDescription(description);
+        doc.setAuthor(author);
+        
+        return doc;
     }
 }

@@ -1,7 +1,7 @@
 package com.docmgmt.dto;
 
-import com.docmgmt.model.Document;
-import com.docmgmt.model.SysObject;
+import com.docmgmt.model.*;
+import com.docmgmt.model.Document.DocumentType;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -79,17 +79,43 @@ public class DocumentDTO extends BaseSysObjectDTO {
      * @return the entity
      */
     public Document toEntity() {
-        Document document = Document.builder()
-                .description(this.getDescription())
-                .documentType(this.getDocumentType())
-                .author(this.getAuthor())
-                .keywords(this.getKeywords())
-                .build();
+        // Create the appropriate document subclass based on type
+        Document document;
+        DocumentType type = this.getDocumentType() != null ? this.getDocumentType() : DocumentType.OTHER;
         
+        switch (type) {
+            case ARTICLE:
+                document = Article.builder().build();
+                break;
+            case REPORT:
+                document = Report.builder().build();
+                break;
+            case CONTRACT:
+                document = Contract.builder().build();
+                break;
+            case MANUAL:
+                document = Manual.builder().build();
+                break;
+            case PRESENTATION:
+                document = Presentation.builder().build();
+                break;
+            case TRIP_REPORT:
+                document = TripReport.builder().build();
+                break;
+            default:
+                // Default to Article for OTHER type
+                document = Article.builder().build();
+                break;
+        }
+        
+        // Set common fields
         document.setId(this.getId());
         document.setName(this.getName());
         document.setMajorVersion(this.getMajorVersion());
         document.setMinorVersion(this.getMinorVersion());
+        document.setDescription(this.getDescription());
+        document.setAuthor(this.getAuthor());
+        document.setKeywords(this.getKeywords());
         
         if (this.getTags() != null && !this.getTags().isEmpty()) {
             document.setTags(new HashSet<>(this.getTags()));

@@ -17,12 +17,15 @@ import java.util.Set;
 @DiscriminatorValue("TRIP_REPORT")
 @Getter
 @Setter
-@NoArgsConstructor
 @AllArgsConstructor
 @SuperBuilder(toBuilder = true)
 @EqualsAndHashCode(callSuper = true)
 @ToString(callSuper = true)
 public class TripReport extends Document {
+    
+    {
+        setDocumentType(DocumentType.TRIP_REPORT);
+    }
     
     @Column(name = "destination")
     private String destination;
@@ -53,6 +56,22 @@ public class TripReport extends Document {
     
     @Column(name = "follow_up_actions", columnDefinition = "TEXT")
     private String followUpActions;
+    
+    public TripReport() {
+        super();
+    }
+    
+    @PostLoad
+    protected void onLoad() {
+        if (getDocumentType() == null) {
+            setDocumentType(DocumentType.TRIP_REPORT);
+        }
+    }
+    
+    @PrePersist
+    protected void onCreate() {
+        setDocumentType(DocumentType.TRIP_REPORT);
+    }
     
     /**
      * Add an attendee to the trip report

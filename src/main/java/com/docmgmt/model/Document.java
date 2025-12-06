@@ -12,7 +12,8 @@ import java.util.List;
 import java.util.Set;
 @Entity
 @Table(name = "document")
-@DiscriminatorValue("DOCUMENT")
+@Inheritance(strategy = InheritanceType.JOINED)
+@DiscriminatorColumn(name = "doc_type", discriminatorType = DiscriminatorType.STRING)
 @Getter
 @Setter
 @NoArgsConstructor
@@ -20,18 +21,21 @@ import java.util.Set;
 @SuperBuilder(toBuilder = true)
 @EqualsAndHashCode(callSuper = true)
 @ToString(callSuper = true)
-public class Document extends SysObject {
+public abstract class Document extends SysObject {
 
     public enum DocumentType {
-        ARTICLE, REPORT, CONTRACT, MANUAL, PRESENTATION, OTHER
+        ARTICLE, REPORT, CONTRACT, MANUAL, PRESENTATION, TRIP_REPORT, OTHER
     }
     
     @Column(columnDefinition = "TEXT")
     private String description;
     
+    /**
+     * Document type - kept for backward compatibility and easier querying.
+     * Subclasses should set this in their constructors or use @PostLoad.
+     */
     @Enumerated(EnumType.STRING)
-    @Column(name = "document_type", nullable = false)
-    @NotNull
+    @Column(name = "document_type")
     private DocumentType documentType;
     
     @ElementCollection(fetch = FetchType.EAGER)

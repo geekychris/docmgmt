@@ -1,6 +1,7 @@
 package com.docmgmt.ui.views;
 
 import com.docmgmt.model.Document;
+import com.docmgmt.model.Article;
 import com.docmgmt.model.Folder;
 import com.docmgmt.service.DocumentService;
 import com.docmgmt.service.FolderService;
@@ -148,12 +149,10 @@ class FolderViewTest {
     }
 
     private Document createTestDocument(Long id, String name) {
-        Document doc = Document.builder()
-            .name(name)
-            .documentType(Document.DocumentType.ARTICLE)
-            .description("Test document")
-            .build();
+        Article doc = Article.builder().build();
         doc.setId(id);
+        doc.setName(name);
+        doc.setDescription("Test document");
         doc.setMajorVersion(1);
         doc.setMinorVersion(0);
         return doc;

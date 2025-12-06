@@ -1,9 +1,7 @@
 package com.docmgmt.ui.views;
 
-import com.docmgmt.model.Content;
-import com.docmgmt.model.Document;
-import com.docmgmt.model.FileStore;
-import com.docmgmt.model.SysObject;
+import com.docmgmt.model.*;
+import com.docmgmt.model.Document.DocumentType;
 import com.docmgmt.service.ContentService;
 import com.docmgmt.service.DocumentService;
 import com.docmgmt.service.FileStoreService;
@@ -219,7 +217,7 @@ public class DocumentView extends VerticalLayout {
         // Configure buttons
         addButton = new Button("Add Document", new Icon(VaadinIcon.PLUS));
         addButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-        addButton.addClickListener(e -> openDocumentDialog(new Document()));
+        addButton.addClickListener(e -> openDocumentTypeSelectionDialog());
         
         editButton = new Button("Edit", new Icon(VaadinIcon.EDIT));
         editButton.setEnabled(false);
@@ -873,6 +871,77 @@ public class DocumentView extends VerticalLayout {
             
             // Log the error for server-side tracking
             e.printStackTrace();
+        }
+    }
+    
+    /**
+     * Opens a dialog to select document type before creating a new document
+     */
+    private void openDocumentTypeSelectionDialog() {
+        Dialog typeDialog = new Dialog();
+        typeDialog.setWidth("400px");
+        
+        H2 title = new H2("Select Document Type");
+        
+        ComboBox<Document.DocumentType> typeCombo = new ComboBox<>("Document Type");
+        typeCombo.setItems(Document.DocumentType.values());
+        typeCombo.setValue(Document.DocumentType.ARTICLE); // Default
+        typeCombo.setWidthFull();
+        typeCombo.setRequired(true);
+        
+        Span helpText = new Span("Choose the type of document you want to create. Each type has specific fields tailored to its purpose.");
+        helpText.getStyle()
+            .set("color", "var(--lumo-secondary-text-color)")
+            .set("font-size", "var(--lumo-font-size-s)")
+            .set("display", "block")
+            .set("margin-bottom", "1em");
+        
+        Button cancelButton = new Button("Cancel", e -> typeDialog.close());
+        Button continueButton = new Button("Continue", e -> {
+            if (typeCombo.getValue() != null) {
+                Document newDoc = createDocumentByType(typeCombo.getValue());
+                typeDialog.close();
+                openDocumentDialog(newDoc);
+            } else {
+                Notification.show("Please select a document type", 
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            }
+        });
+        continueButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        
+        HorizontalLayout buttonLayout = new HorizontalLayout(cancelButton, continueButton);
+        buttonLayout.setJustifyContentMode(FlexComponent.JustifyContentMode.END);
+        buttonLayout.setWidthFull();
+        
+        VerticalLayout dialogLayout = new VerticalLayout(
+            title, new Hr(), helpText, typeCombo, buttonLayout
+        );
+        dialogLayout.setPadding(true);
+        
+        typeDialog.add(dialogLayout);
+        typeDialog.open();
+    }
+    
+    /**
+     * Create a document instance of the appropriate subclass based on type
+     */
+    private Document createDocumentByType(Document.DocumentType type) {
+        switch (type) {
+            case ARTICLE:
+                return Article.builder().build();
+            case REPORT:
+                return Report.builder().build();
+            case CONTRACT:
+                return Contract.builder().build();
+            case MANUAL:
+                return Manual.builder().build();
+            case PRESENTATION:
+                return Presentation.builder().build();
+            case TRIP_REPORT:
+                return TripReport.builder().build();
+            default:
+                return Article.builder().build();
         }
     }
     
