@@ -11,6 +11,8 @@ import com.docmgmt.repository.DocumentRepository;
 import com.docmgmt.repository.FileStoreRepository;
 import com.docmgmt.service.FileStoreService;
 import com.docmgmt.util.TestDataBuilder;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,6 +64,9 @@ public class ContentControllerIntegrationTest {
     
     @Autowired
     private FileStoreService fileStoreService;
+    
+    @PersistenceContext
+    private EntityManager entityManager;
     
     @TempDir
     Path tempDir;
@@ -383,6 +388,9 @@ public class ContentControllerIntegrationTest {
         Content content = TestDataBuilder.createFileStoreContent(null, "to-delete-file.txt", "text/plain", testDocument, testFileStore);
         content = contentRepository.save(content);
         
+        // Capture the content ID before deletion
+        Long contentId = content.getId();
+        
         // Write test data to file
         Path filePath = Paths.get(testFileStore.getFullPath(content.getStoragePath()));
         Files.createDirectories(filePath.getParent());
@@ -392,12 +400,15 @@ public class ContentControllerIntegrationTest {
         assertThat(Files.exists(filePath)).isTrue();
         
         // Act
-        mockMvc.perform(delete("/api/content/{id}", content.getId())
+        mockMvc.perform(delete("/api/content/{id}", contentId)
                 .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isNoContent());
         
+        // Clear the persistence context to force a fresh read from the database
+        entityManager.clear();
+        
         // Assert - Content should be removed and file should be deleted
-        assertThat(contentRepository.existsById(content.getId())).isFalse();
+        assertThat(contentRepository.findById(contentId)).isEmpty();
         assertThat(Files.exists(filePath)).isFalse();
     }
     
@@ -432,7 +443,10 @@ public class ContentControllerIntegrationTest {
      */
     private static <T> T fromJsonString(String json, Class<T> clazz) {
         try {
-            return new com.fasterxml.jackson.databind.ObjectMapper().readValue(json, clazz);
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+            mapper.disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+            return mapper.readValue(json, clazz);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

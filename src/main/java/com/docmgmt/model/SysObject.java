@@ -21,8 +21,8 @@ import java.util.Set;
 @NoArgsConstructor
 @AllArgsConstructor
 @SuperBuilder(toBuilder = true)
-@EqualsAndHashCode(exclude = "contents")
-@ToString(exclude = "contents")
+@EqualsAndHashCode(exclude = {"contents", "parentVersion"})
+@ToString(exclude = {"contents", "parentVersion"})
 public class SysObject {
 
     @Id

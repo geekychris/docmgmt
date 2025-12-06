@@ -1,9 +1,7 @@
 package com.docmgmt.util;
 
-import com.docmgmt.model.Content;
-import com.docmgmt.model.Document;
-import com.docmgmt.model.FileStore;
-import com.docmgmt.model.SysObject;
+import com.docmgmt.model.*;
+import com.docmgmt.model.Document.DocumentType;
 
 import java.time.LocalDateTime;
 import java.util.HashSet;
@@ -44,16 +42,40 @@ public class TestDataBuilder {
      * @param minorVersion Minor version
      * @return A Document entity
      */
-    public static Document createDocument(Long id, String name, Document.DocumentType type, Integer majorVersion, Integer minorVersion) {
-        Document document = Document.builder()
-                .description("Test document description")
-                .documentType(type != null ? type : Document.DocumentType.OTHER)
-                .author("Test Author")
-                .keywords("test, document, keywords")
-                .build();
+    public static Document createDocument(Long id, String name, DocumentType type, Integer majorVersion, Integer minorVersion) {
+        // Create the appropriate document subclass based on type
+        DocumentType docType = type != null ? type : DocumentType.ARTICLE;
+        Document document;
+        
+        switch (docType) {
+            case ARTICLE:
+                document = Article.builder().build();
+                break;
+            case REPORT:
+                document = Report.builder().build();
+                break;
+            case CONTRACT:
+                document = Contract.builder().build();
+                break;
+            case MANUAL:
+                document = Manual.builder().build();
+                break;
+            case PRESENTATION:
+                document = Presentation.builder().build();
+                break;
+            case TRIP_REPORT:
+                document = TripReport.builder().build();
+                break;
+            default:
+                document = Article.builder().build();
+                break;
+        }
         
         document.setId(id);
         document.setName(name != null ? name : "test-doc-" + UUID.randomUUID().toString().substring(0, 8));
+        document.setDescription("Test document description");
+        document.setAuthor("Test Author");
+        document.setKeywords("test, document, keywords");
         document.setMajorVersion(majorVersion != null ? majorVersion : 1);
         document.setMinorVersion(minorVersion != null ? minorVersion : 0);
         

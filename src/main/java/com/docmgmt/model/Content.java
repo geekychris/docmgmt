@@ -119,6 +119,7 @@ public class Content {
     /**
      * Cleans up storage when changing storage locations
      * This method should be called before changing from one storage type to another
+     * Recursively removes empty parent directories up to the filestore root
      * @throws IOException if there's an error accessing the file system
      */
     public void cleanupStorage() throws IOException {
@@ -127,13 +128,33 @@ public class Content {
             if (Files.exists(filePath)) {
                 Files.delete(filePath);
                 
-                // Try to clean up empty directories
-                Path parentDir = filePath.getParent();
-                if (Files.exists(parentDir) && Files.isDirectory(parentDir)) {
-                    try (var dirStream = Files.list(parentDir)) {
-                        if (dirStream.findAny().isEmpty()) {
-                            Files.delete(parentDir);
+                // Clean up empty parent directories recursively
+                // For hierarchical structure like aa/bb/cc/dd/file.ext
+                // We want to remove dd, cc, bb, aa if they're empty
+                Path rootPath = Paths.get(fileStore.getRootPath());
+                Path currentDir = filePath.getParent();
+                
+                while (currentDir != null && !currentDir.equals(rootPath)) {
+                    try {
+                        // Check if directory is empty
+                        if (Files.exists(currentDir) && Files.isDirectory(currentDir)) {
+                            try (var dirStream = Files.list(currentDir)) {
+                                if (dirStream.findAny().isEmpty()) {
+                                    Files.delete(currentDir);
+                                    // Move up to parent directory
+                                    currentDir = currentDir.getParent();
+                                } else {
+                                    // Directory not empty, stop cleanup
+                                    break;
+                                }
+                            }
+                        } else {
+                            break;
                         }
+                    } catch (IOException e) {
+                        // If we can't clean up a directory, log and continue
+                        // Don't fail the entire operation
+                        break;
                     }
                 }
             }

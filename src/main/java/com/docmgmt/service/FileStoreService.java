@@ -89,12 +89,13 @@ public class FileStoreService {
      */
     @Transactional
     public FileStore save(FileStore fileStore) {
-        validateFileStore(fileStore);
-        
         // Check if we're trying to save a FileStore with a name that already exists
+        // Do this BEFORE validation to give better error messages
         if (fileStore.getId() == null && fileStoreRepository.existsByName(fileStore.getName())) {
             throw new IllegalArgumentException("FileStore with name '" + fileStore.getName() + "' already exists");
         }
+        
+        validateFileStore(fileStore);
         
         return fileStoreRepository.save(fileStore);
     }

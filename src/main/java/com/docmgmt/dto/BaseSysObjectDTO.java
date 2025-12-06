@@ -28,10 +28,8 @@ public class BaseSysObjectDTO {
     @NotBlank(message = "Name is required")
     private String name;
     
-    @NotNull(message = "Major version is required")
     private Integer majorVersion;
     
-    @NotNull(message = "Minor version is required")
     private Integer minorVersion;
     
     private Long parentVersionId;
@@ -79,6 +77,7 @@ public class BaseSysObjectDTO {
      * Get the version string representation
      * @return formatted version string like "1.0"
      */
+    @com.fasterxml.jackson.annotation.JsonIgnore
     public String getVersionString() {
         return majorVersion + "." + minorVersion;
     }
