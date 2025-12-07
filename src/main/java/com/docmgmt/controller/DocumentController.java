@@ -59,25 +59,6 @@ public class DocumentController extends AbstractSysObjectController<Document, Do
     }
     
     /**
-     * Find documents by author
-     * @param author The author name
-     * @return List of document DTOs
-     */
-    @GetMapping("/by-author/{author}")
-    public ResponseEntity<List<DocumentDTO>> findByAuthor(@PathVariable String author) {
-        try {
-            List<DocumentDTO> documents = service.findByAuthor(author).stream()
-                    .map(this::toDTO)
-                    .collect(Collectors.toList());
-            
-            return ResponseEntity.ok(documents);
-        } catch (Exception e) {
-            logger.error("Error finding documents by author: {}", author, e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error finding documents", e);
-        }
-    }
-    
-    /**
      * Find documents by tag
      * @param tag The tag to search for
      * @return List of document DTOs

@@ -5,6 +5,7 @@ import com.docmgmt.model.Document.DocumentType;
 import com.docmgmt.service.ContentService;
 import com.docmgmt.service.DocumentService;
 import com.docmgmt.service.FileStoreService;
+import com.docmgmt.service.UserService;
 import com.docmgmt.ui.MainLayout;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -25,12 +26,14 @@ import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.component.splitlayout.SplitLayout;
-import com.vaadin.flow.component.radiobutton.RadioButtonGroup;
-import com.vaadin.flow.component.textfield.TextArea;
+import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.upload.Upload;
 import com.vaadin.flow.component.upload.receivers.MemoryBuffer;
+import com.vaadin.flow.component.combobox.MultiSelectComboBox;
+import com.vaadin.flow.component.splitlayout.SplitLayout;
+import com.vaadin.flow.component.radiobutton.RadioButtonGroup;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
@@ -64,6 +67,7 @@ public class DocumentView extends VerticalLayout {
     private final DocumentService documentService;
     private final ContentService contentService;
     private final FileStoreService fileStoreService;
+    private final UserService userService;
     
     private Grid<Document> grid;
     private TextField filterText;
@@ -86,10 +90,11 @@ public class DocumentView extends VerticalLayout {
     
     @Autowired
     public DocumentView(DocumentService documentService, ContentService contentService, 
-                       FileStoreService fileStoreService) {
+                       FileStoreService fileStoreService, UserService userService) {
         this.documentService = documentService;
         this.contentService = contentService;
         this.fileStoreService = fileStoreService;
+        this.userService = userService;
         
         addClassName("document-view");
         setSizeFull();
@@ -128,7 +133,9 @@ public class DocumentView extends VerticalLayout {
         grid.addColumn(Document::getName).setHeader("Name").setSortable(true);
         grid.addColumn(Document::getDocumentType).setHeader("Type").setSortable(true);
         grid.addColumn(Document::getDescription).setHeader("Description");
-        grid.addColumn(Document::getAuthor).setHeader("Author").setSortable(true);
+        grid.addColumn(doc -> doc.getOwner() != null ? doc.getOwner().getUsername() : "-")
+            .setHeader("Owner").setSortable(false);
+        grid.addColumn(doc -> formatAuthors(doc.getAuthors())).setHeader("Authors");
         grid.addColumn(doc -> formatTags(doc.getTags())).setHeader("Tags");
         grid.addColumn(doc -> doc.getMajorVersion() + "." + doc.getMinorVersion())
             .setHeader("Version").setSortable(true);
@@ -178,6 +185,15 @@ public class DocumentView extends VerticalLayout {
         return String.join(", ", tags);
     }
     
+    private String formatAuthors(Set<User> authors) {
+        if (authors == null || authors.isEmpty()) {
+            return "";
+        }
+        return authors.stream()
+            .map(User::getUsername)
+            .collect(Collectors.joining(", "));
+    }
+    
     private void configureFilter() {
         filterText = new TextField();
         filterText.setPlaceholder("Filter by name, description, or author...");
@@ -197,13 +213,11 @@ public class DocumentView extends VerticalLayout {
                 boolean nameMatches = document.getName().toLowerCase().contains(filter);
                 boolean descMatches = document.getDescription() != null && 
                                      document.getDescription().toLowerCase().contains(filter);
-                boolean authorMatches = document.getAuthor() != null && 
-                                       document.getAuthor().toLowerCase().contains(filter);
                 boolean tagsMatch = document.getTags() != null && 
                                    document.getTags().stream()
                                    .anyMatch(tag -> tag.toLowerCase().contains(filter));
                 
-                return nameMatches || descMatches || authorMatches || tagsMatch;
+                return nameMatches || descMatches || tagsMatch;
             });
         }
     }
@@ -296,16 +310,28 @@ public class DocumentView extends VerticalLayout {
         TextArea descriptionField = new TextArea("Description");
         descriptionField.setHeight("100px");
         
-        TextField authorField = new TextField("Author");
-        
         TextArea tagsField = new TextArea("Tags (comma separated)");
         tagsField.setHeight("80px");
         
         TextField keywordsField = new TextField("Keywords");
         
+        // Owner selection
+        ComboBox<User> ownerCombo = new ComboBox<>("Owner");
+        ownerCombo.setItems(userService.findAll());
+        ownerCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
+        ownerCombo.setPlaceholder("Select owner...");
+        ownerCombo.setClearButtonVisible(true);
+        
+        // Authors selection
+        MultiSelectComboBox<User> authorsCombo = new MultiSelectComboBox<>("Authors");
+        authorsCombo.setItems(userService.findAll());
+        authorsCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
+        authorsCombo.setPlaceholder("Search and select authors...");
+        authorsCombo.setClearButtonVisible(true);
+        
         // Create the form layout
         FormLayout formLayout = new FormLayout();
-        formLayout.add(nameField, typeCombo, descriptionField, authorField, tagsField, keywordsField);
+        formLayout.add(nameField, typeCombo, descriptionField, ownerCombo, tagsField, keywordsField, authorsCombo);
         formLayout.setResponsiveSteps(
             new FormLayout.ResponsiveStep("0", 1),
             new FormLayout.ResponsiveStep("500px", 2)
@@ -315,6 +341,7 @@ public class DocumentView extends VerticalLayout {
         formLayout.setColspan(descriptionField, 2);
         formLayout.setColspan(tagsField, 2);
         formLayout.setColspan(keywordsField, 2);
+        formLayout.setColspan(authorsCombo, 2);
         
         // Create buttons for the dialog
         Button cancelButton = new Button("Cancel", e -> documentDialog.close());
@@ -342,9 +369,6 @@ public class DocumentView extends VerticalLayout {
         binder.forField(descriptionField)
             .bind(Document::getDescription, Document::setDescription);
         
-        binder.forField(authorField)
-            .bind(Document::getAuthor, Document::setAuthor);
-        
         // Handling tags as a string in the UI but as a Set<String> in the model
         binder.forField(tagsField)
             .bind(
@@ -364,6 +388,22 @@ public class DocumentView extends VerticalLayout {
         
         binder.forField(keywordsField)
             .bind(Document::getKeywords, Document::setKeywords);
+        
+        // Bind owner
+        binder.forField(ownerCombo)
+            .bind(Document::getOwner, Document::setOwner);
+        
+        // Bind authors
+        binder.forField(authorsCombo)
+            .bind(
+                doc -> doc.getAuthors(),
+                (doc, authors) -> {
+                    doc.getAuthors().clear();
+                    if (authors != null) {
+                        doc.getAuthors().addAll(authors);
+                    }
+                }
+            );
         
         // Read the document into the form
         binder.readBean(document);

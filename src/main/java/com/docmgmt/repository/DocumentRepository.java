@@ -23,14 +23,6 @@ public interface DocumentRepository extends BaseSysObjectRepository<Document> {
     List<Document> findByDocumentType(@Param("documentType") Document.DocumentType documentType);
     
     /**
-     * Find documents by author
-     * @param author The author name
-     * @return List of matching documents
-     */
-    @Query("SELECT DISTINCT d FROM Document d LEFT JOIN FETCH d.tags WHERE d.author = :author")
-    List<Document> findByAuthor(@Param("author") String author);
-    
-    /**
      * Find documents containing a specific tag
      * @param tag The tag to search for
      * @return List of matching documents

@@ -71,8 +71,12 @@ public class Article extends Document {
      */
     public String getCitation() {
         StringBuilder citation = new StringBuilder();
-        if (getAuthor() != null) {
-            citation.append(getAuthor()).append(". ");
+        if (getAuthors() != null && !getAuthors().isEmpty()) {
+            citation.append(getAuthors().stream()
+                .map(User::getFullName)
+                .reduce((a, b) -> a + ", " + b)
+                .orElse(""));
+            citation.append(". ");
         }
         if (getName() != null) {
             citation.append("\"").append(getName()).append("\". ");

@@ -43,8 +43,6 @@ public abstract class Document extends SysObject {
     @Column(name = "tag")
     @Builder.Default
     private Set<String> tags = new HashSet<>();
-    @Column(name = "author")
-    private String author;
     
     @Column(name = "keywords", columnDefinition = "TEXT")
     private String keywords;
@@ -87,7 +85,6 @@ public abstract class Document extends SysObject {
             Document documentTarget = (Document) target;
             documentTarget.setDescription(this.getDescription());
             documentTarget.setDocumentType(this.getDocumentType());
-            documentTarget.setAuthor(this.getAuthor());
             documentTarget.setKeywords(this.getKeywords());
             
             // Copy tags

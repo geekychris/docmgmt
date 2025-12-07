@@ -14,6 +14,52 @@ import java.util.UUID;
 public class TestDataBuilder {
 
     /**
+     * Create a test User
+     * 
+     * @param id Optional ID, null for new entities
+     * @param username Username
+     * @param email Email address
+     * @return A User entity
+     */
+    public static User createUser(Long id, String username, String email) {
+        return User.builder()
+                .id(id)
+                .name(username != null ? username : "test-user-" + UUID.randomUUID().toString().substring(0, 8))
+                .username(username != null ? username : "test-user-" + UUID.randomUUID().toString().substring(0, 8))
+                .email(email != null ? email : "test-" + UUID.randomUUID().toString().substring(0, 8) + "@example.com")
+                .firstName("Test")
+                .lastName("User")
+                .isActive(true)
+                .majorVersion(1)
+                .minorVersion(0)
+                .build();
+    }
+
+    /**
+     * Create a test User with full name
+     * 
+     * @param id Optional ID, null for new entities
+     * @param username Username
+     * @param email Email address
+     * @param firstName First name
+     * @param lastName Last name
+     * @return A User entity
+     */
+    public static User createUser(Long id, String username, String email, String firstName, String lastName) {
+        return User.builder()
+                .id(id)
+                .name(username != null ? username : "test-user-" + UUID.randomUUID().toString().substring(0, 8))
+                .username(username != null ? username : "test-user-" + UUID.randomUUID().toString().substring(0, 8))
+                .email(email != null ? email : "test-" + UUID.randomUUID().toString().substring(0, 8) + "@example.com")
+                .firstName(firstName)
+                .lastName(lastName)
+                .isActive(true)
+                .majorVersion(1)
+                .minorVersion(0)
+                .build();
+    }
+
+    /**
      * Create a test FileStore
      * 
      * @param id Optional ID, null for new entities
@@ -74,7 +120,6 @@ public class TestDataBuilder {
         document.setId(id);
         document.setName(name != null ? name : "test-doc-" + UUID.randomUUID().toString().substring(0, 8));
         document.setDescription("Test document description");
-        document.setAuthor("Test Author");
         document.setKeywords("test, document, keywords");
         document.setMajorVersion(majorVersion != null ? majorVersion : 1);
         document.setMinorVersion(minorVersion != null ? minorVersion : 0);

@@ -21,8 +21,8 @@ import java.util.Set;
 @NoArgsConstructor
 @AllArgsConstructor
 @SuperBuilder(toBuilder = true)
-@EqualsAndHashCode(exclude = {"contents", "parentVersion"})
-@ToString(exclude = {"contents", "parentVersion"})
+@EqualsAndHashCode(exclude = {"contents", "parentVersion", "owner", "authors"})
+@ToString(exclude = {"contents", "parentVersion", "owner", "authors"})
 public class SysObject {
 
     @Id
@@ -48,6 +48,19 @@ public class SysObject {
     @Builder.Default
     private Set<Content> contents = new HashSet<>();
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_id")
+    private User owner;
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "sys_object_authors",
+        joinColumns = @JoinColumn(name = "sys_object_id"),
+        inverseJoinColumns = @JoinColumn(name = "user_id")
+    )
+    @Builder.Default
+    private Set<User> authors = new HashSet<>();
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
@@ -57,6 +70,26 @@ public class SysObject {
     @Column(name = "modified_at", nullable = false)
     @Builder.Default
     private LocalDateTime modifiedAt = LocalDateTime.now();
+    /**
+     * Add an author to this SysObject
+     * @param author The user to add as author
+     * @return this object for method chaining
+     */
+    public SysObject addAuthor(User author) {
+        getAuthors().add(author);
+        return this;
+    }
+
+    /**
+     * Remove an author from this SysObject
+     * @param author The user to remove as author
+     * @return this object for method chaining
+     */
+    public SysObject removeAuthor(User author) {
+        getAuthors().remove(author);
+        return this;
+    }
+
     /**
      * Add content to this SysObject
      * @param content The content to add
@@ -150,6 +183,11 @@ public class SysObject {
         target.setName(this.getName());
         target.setMajorVersion(this.getMajorVersion());
         target.setMinorVersion(this.getMinorVersion());
+        target.setOwner(this.getOwner());
+        // Copy authors
+        for (User author : this.getAuthors()) {
+            target.addAuthor(author);
+        }
         // Note: Contents are handled separately in createMajorVersion and createMinorVersion methods
     }
 }

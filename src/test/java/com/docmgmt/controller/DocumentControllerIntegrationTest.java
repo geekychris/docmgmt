@@ -207,31 +207,6 @@ public class DocumentControllerIntegrationTest {
     }
 
     @Test
-    void findByAuthor_shouldReturnMatchingDocuments() throws Exception {
-        // Arrange - Create documents with different authors
-        Document doc1 = createAndSaveTestDocument("Doc by John", Document.DocumentType.REPORT);
-        Document doc2 = createAndSaveTestDocument("Another by John", Document.DocumentType.MANUAL);
-        Document doc3 = createAndSaveTestDocument("Doc by Jane", Document.DocumentType.ARTICLE);
-        
-        String johnAuthor = "John Smith";
-        String janeAuthor = "Jane Doe";
-        
-        doc1.setAuthor(johnAuthor);
-        doc2.setAuthor(johnAuthor);
-        doc3.setAuthor(janeAuthor);
-        
-        documentRepository.saveAll(Arrays.asList(doc1, doc2, doc3));
-
-        // Act & Assert
-        mockMvc.perform(get("/api/documents/by-author/{author}", johnAuthor)
-                .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(2)))
-                .andExpect(jsonPath("$[*].name", containsInAnyOrder("Doc by John", "Another by John")))
-                .andExpect(jsonPath("$[*].author", everyItem(is(johnAuthor))));
-    }
-
-    @Test
     void findByTag_shouldReturnDocumentsWithTag() throws Exception {
         // Arrange - Create documents with different tags
         Document doc1 = createAndSaveTestDocument("Important Doc", Document.DocumentType.REPORT);
@@ -340,7 +315,6 @@ public class DocumentControllerIntegrationTest {
         dto.setDocumentType(type);
         dto.setDescription("Test description");
         dto.setKeywords("test keywords");
-        dto.setAuthor("Test Author");
         return dto;
     }
 
@@ -350,7 +324,6 @@ public class DocumentControllerIntegrationTest {
     private Document createAndSaveTestDocument(String name, Document.DocumentType type) {
         Document document = TestDataBuilder.createDocument(null, name, type, 1, 0);
         document.setDescription("Test description");
-        document.setAuthor("Test Author");
         document.setKeywords("test keywords");
         return documentRepository.save(document);
     }

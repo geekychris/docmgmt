@@ -143,11 +143,9 @@ public class DocumentServiceTest {
         Long id = 1L;
         Document originalDoc = TestDataBuilder.createDocument(id, "Original Document", Document.DocumentType.REPORT, 1, 0);
         originalDoc.setDescription("Original description");
-        originalDoc.setAuthor("Original Author");
         
         Document newVersionDoc = TestDataBuilder.createDocument(null, "Original Document", Document.DocumentType.REPORT, 2, 0);
         newVersionDoc.setDescription("Original description");
-        newVersionDoc.setAuthor("Original Author");
         newVersionDoc.setParentVersion(originalDoc);
         
         when(documentRepository.findById(id)).thenReturn(Optional.of(originalDoc));
@@ -167,7 +165,6 @@ public class DocumentServiceTest {
         assertThat(result.getId()).isEqualTo(2L);
         assertThat(result.getName()).isEqualTo(originalDoc.getName());
         assertThat(result.getDescription()).isEqualTo(originalDoc.getDescription());
-        assertThat(result.getAuthor()).isEqualTo(originalDoc.getAuthor());
         assertThat(result.getDocumentType()).isEqualTo(originalDoc.getDocumentType());
         assertThat(result.getMajorVersion()).isEqualTo(2);
         assertThat(result.getMinorVersion()).isEqualTo(0);
@@ -185,11 +182,9 @@ public class DocumentServiceTest {
         Long id = 1L;
         Document originalDoc = TestDataBuilder.createDocument(id, "Original Document", Document.DocumentType.REPORT, 1, 0);
         originalDoc.setDescription("Original description");
-        originalDoc.setAuthor("Original Author");
         
         Document newVersionDoc = TestDataBuilder.createDocument(null, "Original Document", Document.DocumentType.REPORT, 1, 1);
         newVersionDoc.setDescription("Original description");
-        newVersionDoc.setAuthor("Original Author");
         newVersionDoc.setParentVersion(originalDoc);
         
         when(documentRepository.findById(id)).thenReturn(Optional.of(originalDoc));
@@ -209,7 +204,6 @@ public class DocumentServiceTest {
         assertThat(result.getId()).isEqualTo(2L);
         assertThat(result.getName()).isEqualTo(originalDoc.getName());
         assertThat(result.getDescription()).isEqualTo(originalDoc.getDescription());
-        assertThat(result.getAuthor()).isEqualTo(originalDoc.getAuthor());
         assertThat(result.getDocumentType()).isEqualTo(originalDoc.getDocumentType());
         assertThat(result.getMajorVersion()).isEqualTo(1);
         assertThat(result.getMinorVersion()).isEqualTo(1);
@@ -267,26 +261,6 @@ public class DocumentServiceTest {
         assertThat(results).extracting("name").containsExactly("Report 1", "Report 2");
         assertThat(results).extracting("documentType").containsOnly(targetType);
         verify(documentRepository, times(1)).findByDocumentType(targetType);
-    }
-
-    @Test
-    void findByAuthor_shouldReturnMatchingDocuments() {
-        // Arrange
-        String author = "John Smith";
-        Document doc1 = TestDataBuilder.createDocument(1L, "Doc 1", Document.DocumentType.ARTICLE, 1, 0);
-        Document doc2 = TestDataBuilder.createDocument(2L, "Doc 2", Document.DocumentType.MANUAL, 1, 0);
-        doc1.setAuthor(author);
-        doc2.setAuthor(author);
-        
-        when(documentRepository.findByAuthor(author)).thenReturn(Arrays.asList(doc1, doc2));
-
-        // Act
-        List<Document> results = documentService.findByAuthor(author);
-
-        // Assert
-        assertThat(results).hasSize(2);
-        assertThat(results).extracting("author").containsOnly(author);
-        verify(documentRepository, times(1)).findByAuthor(author);
     }
 
     @Test

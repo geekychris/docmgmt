@@ -33,11 +33,4 @@ public interface TripReportRepository extends BaseSysObjectRepository<TripReport
      * @return List of trip reports within the date range
      */
     List<TripReport> findByTripStartDateBetween(LocalDate startDate, LocalDate endDate);
-    
-    /**
-     * Find trip reports by author
-     * @param author The author name
-     * @return List of trip reports by the author
-     */
-    List<TripReport> findByAuthor(String author);
 }

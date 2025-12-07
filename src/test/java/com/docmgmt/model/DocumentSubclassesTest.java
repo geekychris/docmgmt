@@ -16,7 +16,6 @@ class DocumentSubclassesTest {
         Article article = Article.builder()
             .name("Test Article")
             .description("Test Description")
-            .author("John Doe")
             .publicationDate(LocalDate.of(2024, 1, 1))
             .journal("Nature")
             .volume("100")

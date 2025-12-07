@@ -4,6 +4,7 @@ import com.docmgmt.model.*;
 import com.docmgmt.model.Document.DocumentType;
 import com.docmgmt.service.DocumentService;
 import com.docmgmt.service.FolderService;
+import com.docmgmt.service.UserService;
 import com.docmgmt.ui.MainLayout;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -26,6 +27,7 @@ import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.treegrid.TreeGrid;
+import com.vaadin.flow.component.combobox.MultiSelectComboBox;
 import com.vaadin.flow.data.provider.hierarchy.AbstractBackEndHierarchicalDataProvider;
 import com.vaadin.flow.data.provider.hierarchy.HierarchicalQuery;
 import com.vaadin.flow.router.PageTitle;
@@ -41,6 +43,7 @@ public class FolderView extends VerticalLayout {
 
     private final FolderService folderService;
     private final DocumentService documentService;
+    private final UserService userService;
     
     private TreeGrid<Folder> folderTree;
     private Grid<SysObject> itemsGrid;
@@ -55,9 +58,10 @@ public class FolderView extends VerticalLayout {
     private H3 currentFolderLabel;
     
     @Autowired
-    public FolderView(FolderService folderService, DocumentService documentService) {
+    public FolderView(FolderService folderService, DocumentService documentService, UserService userService) {
         this.folderService = folderService;
         this.documentService = documentService;
+        this.userService = userService;
         
         addClassName("folder-view");
         setSizeFull();
@@ -147,6 +151,9 @@ public class FolderView extends VerticalLayout {
             return "0 items";
         }).setHeader("Contents").setAutoWidth(true);
         
+        folderTree.addColumn(folder -> folder.getOwner() != null ? folder.getOwner().getUsername() : "-")
+            .setHeader("Owner").setAutoWidth(true);
+        
         folderTree.addThemeVariants(GridVariant.LUMO_ROW_STRIPES);
         
         folderTree.addSelectionListener(event -> {
@@ -208,6 +215,9 @@ public class FolderView extends VerticalLayout {
         itemsGrid.addColumn(item -> 
             item.getMajorVersion() + "." + item.getMinorVersion()
         ).setHeader("Version").setAutoWidth(true);
+        
+        itemsGrid.addColumn(item -> item.getOwner() != null ? item.getOwner().getUsername() : "-")
+            .setHeader("Owner").setAutoWidth(true);
         
         itemsGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES);
         
@@ -289,7 +299,21 @@ public class FolderView extends VerticalLayout {
         descField.setWidthFull();
         descField.setHeight("100px");
         
-        FormLayout formLayout = new FormLayout(nameField, pathField, descField);
+        ComboBox<User> ownerCombo = new ComboBox<>("Owner");
+        ownerCombo.setItems(userService.findAll());
+        ownerCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
+        ownerCombo.setPlaceholder("Select owner...");
+        ownerCombo.setClearButtonVisible(true);
+        ownerCombo.setWidthFull();
+        
+        MultiSelectComboBox<User> authorsCombo = new MultiSelectComboBox<>("Authors");
+        authorsCombo.setItems(userService.findAll());
+        authorsCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
+        authorsCombo.setPlaceholder("Search and select authors...");
+        authorsCombo.setClearButtonVisible(true);
+        authorsCombo.setWidthFull();
+        
+        FormLayout formLayout = new FormLayout(nameField, pathField, descField, ownerCombo, authorsCombo);
         
         Button cancelButton = new Button("Cancel", e -> dialog.close());
         Button saveButton = new Button("Create", e -> {
@@ -304,7 +328,13 @@ public class FolderView extends VerticalLayout {
                     .name(nameField.getValue())
                     .path(pathField.getValue())
                     .description(descField.getValue())
+                    .owner(ownerCombo.getValue())
                     .build();
+                
+                // Add authors
+                if (authorsCombo.getValue() != null && !authorsCombo.getValue().isEmpty()) {
+                    authorsCombo.getValue().forEach(folder::addAuthor);
+                }
                 
                 folder = folderService.save(folder);
                 
@@ -357,10 +387,21 @@ public class FolderView extends VerticalLayout {
         descField.setWidthFull();
         descField.setHeight("100px");
         
-        TextField authorField = new TextField("Author");
-        authorField.setWidthFull();
+        ComboBox<User> ownerCombo = new ComboBox<>("Owner");
+        ownerCombo.setItems(userService.findAll());
+        ownerCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
+        ownerCombo.setPlaceholder("Select owner...");
+        ownerCombo.setClearButtonVisible(true);
+        ownerCombo.setWidthFull();
         
-        FormLayout formLayout = new FormLayout(nameField, typeCombo, descField, authorField);
+        MultiSelectComboBox<User> docAuthorsCombo = new MultiSelectComboBox<>("Authors");
+        docAuthorsCombo.setItems(userService.findAll());
+        docAuthorsCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
+        docAuthorsCombo.setPlaceholder("Search and select authors...");
+        docAuthorsCombo.setClearButtonVisible(true);
+        docAuthorsCombo.setWidthFull();
+        
+        FormLayout formLayout = new FormLayout(nameField, typeCombo, descField, ownerCombo, docAuthorsCombo);
         
         Button cancelButton = new Button("Cancel", e -> dialog.close());
         Button saveButton = new Button("Create", e -> {
@@ -373,7 +414,13 @@ public class FolderView extends VerticalLayout {
             try {
                 // Create the appropriate document subclass based on type
                 Document doc = createDocumentByType(typeCombo.getValue(), 
-                    nameField.getValue(), descField.getValue(), authorField.getValue());
+                    nameField.getValue(), descField.getValue());
+                
+                // Set owner and authors
+                doc.setOwner(ownerCombo.getValue());
+                if (docAuthorsCombo.getValue() != null && !docAuthorsCombo.getValue().isEmpty()) {
+                    docAuthorsCombo.getValue().forEach(doc::addAuthor);
+                }
                 
                 doc = documentService.save(doc);
                 folderService.addItemToFolder(currentFolder.getId(), doc);
@@ -479,7 +526,7 @@ public class FolderView extends VerticalLayout {
     /**
      * Create a document subclass based on the document type
      */
-    private Document createDocumentByType(DocumentType type, String name, String description, String author) {
+    private Document createDocumentByType(DocumentType type, String name, String description) {
         Document doc;
         switch (type) {
             case ARTICLE:
@@ -509,7 +556,6 @@ public class FolderView extends VerticalLayout {
         // Set common fields
         doc.setName(name);
         doc.setDescription(description);
-        doc.setAuthor(author);
         
         return doc;
     }

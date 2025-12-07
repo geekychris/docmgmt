@@ -52,16 +52,6 @@ public class TripReportService extends AbstractSysObjectService<TripReport, Trip
     }
     
     /**
-     * Find trip reports by author
-     * @param author The author name
-     * @return List of trip reports by the author
-     */
-    @Transactional(readOnly = true)
-    public List<TripReport> findByAuthor(String author) {
-        return repository.findByAuthor(author);
-    }
-    
-    /**
      * Override findAll to ensure collections are initialized
      * @return List of all trip reports
      */

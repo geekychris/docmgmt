@@ -28,8 +28,6 @@ public class DocumentDTO extends BaseSysObjectDTO {
     
     private Set<String> tags;
     
-    private String author;
-    
     private String keywords;
     
     /**
@@ -45,7 +43,6 @@ public class DocumentDTO extends BaseSysObjectDTO {
                 .minorVersion(document.getMinorVersion())
                 .description(document.getDescription())
                 .documentType(document.getDocumentType())
-                .author(document.getAuthor())
                 .keywords(document.getKeywords())
                 .createdAt(document.getCreatedAt())
                 .modifiedAt(document.getModifiedAt())
@@ -114,7 +111,6 @@ public class DocumentDTO extends BaseSysObjectDTO {
         document.setMajorVersion(this.getMajorVersion());
         document.setMinorVersion(this.getMinorVersion());
         document.setDescription(this.getDescription());
-        document.setAuthor(this.getAuthor());
         document.setKeywords(this.getKeywords());
         
         if (this.getTags() != null && !this.getTags().isEmpty()) {
@@ -136,7 +132,6 @@ public class DocumentDTO extends BaseSysObjectDTO {
             Document document = (Document) sysObject;
             document.setDescription(this.getDescription());
             document.setDocumentType(this.getDocumentType());
-            document.setAuthor(this.getAuthor());
             document.setKeywords(this.getKeywords());
             
             if (this.getTags() != null) {

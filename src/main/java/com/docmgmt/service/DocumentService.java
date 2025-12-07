@@ -27,11 +27,17 @@ public class DocumentService extends AbstractSysObjectService<Document, Document
     @Transactional(readOnly = true)
     public List<Document> findAll() {
         List<Document> documents = super.findAll();
-        // Initialize tags, contents collections, and parent version
+        // Initialize tags, contents collections, owner, authors, and parent version
         documents.forEach(doc -> {
             doc.getTags().size();
             if (doc.getContents() != null) {
                 doc.getContents().size();
+            }
+            if (doc.getOwner() != null) {
+                doc.getOwner().getName();
+            }
+            if (doc.getAuthors() != null) {
+                doc.getAuthors().size();
             }
             // Touch parent version to initialize it
             if (doc.getParentVersion() != null) {
@@ -50,10 +56,16 @@ public class DocumentService extends AbstractSysObjectService<Document, Document
     @Transactional(readOnly = true)
     public Document findById(Long id) {
         Document document = super.findById(id);
-        // Initialize tags, contents collections, and parent version
+        // Initialize tags, contents collections, owner, authors, and parent version
         document.getTags().size();
         if (document.getContents() != null) {
             document.getContents().size();
+        }
+        if (document.getOwner() != null) {
+            document.getOwner().getName();
+        }
+        if (document.getAuthors() != null) {
+            document.getAuthors().size();
         }
         // Touch parent version to initialize it
         if (document.getParentVersion() != null) {
@@ -70,11 +82,17 @@ public class DocumentService extends AbstractSysObjectService<Document, Document
     @Transactional(readOnly = true)
     public List<Document> findAllLatestVersions() {
         List<Document> documents = super.findAllLatestVersions();
-        // Initialize tags, contents collections, and parent version
+        // Initialize tags, contents collections, owner, authors, and parent version
         documents.forEach(doc -> {
             doc.getTags().size();
             if (doc.getContents() != null) {
                 doc.getContents().size();
+            }
+            if (doc.getOwner() != null) {
+                doc.getOwner().getName();
+            }
+            if (doc.getAuthors() != null) {
+                doc.getAuthors().size();
             }
             // Touch parent version to initialize it
             if (doc.getParentVersion() != null) {
@@ -92,16 +110,6 @@ public class DocumentService extends AbstractSysObjectService<Document, Document
     @Transactional(readOnly = true)
     public List<Document> findByDocumentType(Document.DocumentType documentType) {
         return repository.findByDocumentType(documentType);
-    }
-    
-    /**
-     * Find documents by author
-     * @param author The author name
-     * @return List of matching documents
-     */
-    @Transactional(readOnly = true)
-    public List<Document> findByAuthor(String author) {
-        return repository.findByAuthor(author);
     }
     
     /**
