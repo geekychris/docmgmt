@@ -3,6 +3,13 @@ package com.docmgmt.controller;
 import com.docmgmt.dto.DocumentDTO;
 import com.docmgmt.model.Document;
 import com.docmgmt.service.DocumentService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +27,7 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/documents")
+@Tag(name = "Documents", description = "Document management operations including creation, versioning, and queries")
 public class DocumentController extends AbstractSysObjectController<Document, DocumentDTO, DocumentService> {
 
     private static final Logger logger = LoggerFactory.getLogger(DocumentController.class);
@@ -44,8 +52,18 @@ public class DocumentController extends AbstractSysObjectController<Document, Do
      * @param documentType The document type
      * @return List of document DTOs
      */
+    @Operation(
+        summary = "Find documents by type",
+        description = "Retrieve all documents of a specific type (ARTICLE, MANUAL, REPORT, etc.)"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Documents found"),
+        @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
     @GetMapping("/by-type/{documentType}")
-    public ResponseEntity<List<DocumentDTO>> findByDocumentType(@PathVariable Document.DocumentType documentType) {
+    public ResponseEntity<List<DocumentDTO>> findByDocumentType(
+            @Parameter(description = "Document type to search for", required = true)
+            @PathVariable Document.DocumentType documentType) {
         try {
             List<DocumentDTO> documents = service.findByDocumentType(documentType).stream()
                     .map(this::toDTO)
@@ -63,8 +81,18 @@ public class DocumentController extends AbstractSysObjectController<Document, Do
      * @param tag The tag to search for
      * @return List of document DTOs
      */
+    @Operation(
+        summary = "Find documents by tag",
+        description = "Retrieve all documents that contain the specified tag"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Documents found"),
+        @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
     @GetMapping("/by-tag/{tag}")
-    public ResponseEntity<List<DocumentDTO>> findByTag(@PathVariable String tag) {
+    public ResponseEntity<List<DocumentDTO>> findByTag(
+            @Parameter(description = "Tag to search for", required = true, example = "java")
+            @PathVariable String tag) {
         try {
             List<DocumentDTO> documents = service.findByTag(tag).stream()
                     .map(this::toDTO)
@@ -82,8 +110,18 @@ public class DocumentController extends AbstractSysObjectController<Document, Do
      * @param keywords The keywords to search for
      * @return List of document DTOs
      */
+    @Operation(
+        summary = "Search documents by keywords",
+        description = "Search for documents using keyword matching (searches in the keywords field)"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Documents found"),
+        @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
     @GetMapping("/search")
-    public ResponseEntity<List<DocumentDTO>> searchByKeywords(@RequestParam String keywords) {
+    public ResponseEntity<List<DocumentDTO>> searchByKeywords(
+            @Parameter(description = "Keywords to search for", required = true, example = "spring boot java")
+            @RequestParam String keywords) {
         try {
             List<DocumentDTO> documents = service.findByKeywords(keywords).stream()
                     .map(this::toDTO)

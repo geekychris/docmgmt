@@ -5,6 +5,7 @@ import com.docmgmt.dto.SpaceInfoDTO;
 import com.docmgmt.model.FileStore;
 import com.docmgmt.repository.ContentRepository;
 import com.docmgmt.service.FileStoreService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -24,6 +25,7 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/filestores")
+@Tag(name = "File Stores", description = "File store management for external content storage")
 public class FileStoreController {
 
     private static final Logger logger = LoggerFactory.getLogger(FileStoreController.class);

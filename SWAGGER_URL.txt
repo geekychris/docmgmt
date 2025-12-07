@@ -1,0 +1,32 @@
+╔══════════════════════════════════════════════════════════╗
+║          SWAGGER UI ACCESS - CORRECT URLS                ║
+╚══════════════════════════════════════════════════════════╝
+
+After restarting the application, access Swagger UI at:
+
+  🌐 Swagger UI:
+     http://localhost:8082/docmgmt/api/swagger-ui.html
+
+  📄 API Specifications:
+     JSON: http://localhost:8082/docmgmt/api/v3/api-docs  
+     YAML: http://localhost:8082/docmgmt/api/v3/api-docs.yaml
+
+╔══════════════════════════════════════════════════════════╗
+║  RESTART REQUIRED                                        ║
+╚══════════════════════════════════════════════════════════╝
+
+The configuration has been updated. Please restart:
+
+  1. Stop the app (Ctrl+C)
+  2. Run: mvn spring-boot:run
+  3. Wait for: "Started DocumentManagementApplication"
+  4. Open: http://localhost:8082/docmgmt/api/swagger-ui.html
+
+╔══════════════════════════════════════════════════════════╗
+║  WHY /api/ PREFIX?                                       ║
+╚══════════════════════════════════════════════════════════╝
+
+Vaadin (UI framework) automatically excludes paths starting 
+with /api/ from its routing. This allows Swagger UI to work
+without conflicts.
+

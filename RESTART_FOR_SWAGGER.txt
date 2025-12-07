@@ -1,0 +1,41 @@
+╔══════════════════════════════════════════════════════════╗
+║          ⚠️  RESTART REQUIRED FOR SWAGGER UI  ⚠️          ║
+╚══════════════════════════════════════════════════════════╝
+
+The application configuration has been updated to fix Swagger UI access.
+
+╔══════════════════════════════════════════════════════════╗
+║  STEPS TO ACCESS SWAGGER UI                              ║
+╚══════════════════════════════════════════════════════════╝
+
+1. STOP the current application (press Ctrl+C)
+
+2. START the application:
+   mvn spring-boot:run
+
+3. WAIT for startup message:
+   "Started DocumentManagementApplication"
+
+4. OPEN in your browser:
+   http://localhost:8082/docmgmt/api/swagger-ui.html
+
+╔══════════════════════════════════════════════════════════╗
+║  WHAT WAS FIXED                                          ║
+╚══════════════════════════════════════════════════════════╝
+
+Added to application.properties:
+  vaadin.excludeUrls=/api/**,/swagger-ui/**,/v3/api-docs/**
+
+This tells Vaadin to NOT intercept paths starting with /api/,
+allowing Spring MVC to handle Swagger UI properly.
+
+╔══════════════════════════════════════════════════════════╗
+║  IF IT STILL DOESN'T WORK                                ║
+╚══════════════════════════════════════════════════════════╝
+
+Try a clean restart:
+  1. Stop the application
+  2. mvn clean package -DskipTests
+  3. mvn spring-boot:run
+  4. Access: http://localhost:8082/docmgmt/api/swagger-ui.html
+

@@ -332,10 +332,11 @@ Run the application with the Spring Boot Maven plugin:
 mvn spring-boot:run
 ```
 
-The application will be available at http://localhost:8080 with the following access points:
-- Web UI: http://localhost:8080
-- API: http://localhost:8080/api/*
-- H2 Console: http://localhost:8080/h2-console (JDBC URL: jdbc:h2:file:./docmgmt_db)
+The application will be available at http://localhost:8082/docmgmt with the following access points:
+- Web UI: http://localhost:8082/docmgmt
+- API: http://localhost:8082/docmgmt/api/*
+- **Swagger UI**: http://localhost:8082/docmgmt/api/swagger-ui.html
+- H2 Console: http://localhost:8082/docmgmt/h2-console (JDBC URL: jdbc:h2:file:./docmgmt_db)
 
 ### Production Mode
 
@@ -350,6 +351,25 @@ The application will be available at http://localhost:8080 with the following ac
    ```
 
 ## API Documentation
+
+### Interactive API Documentation (Swagger UI)
+
+**🚀 Quick Start**: Access the interactive API documentation at:
+
+```
+http://localhost:8082/docmgmt/api/swagger-ui.html
+```
+
+The Swagger UI provides:
+- **Browse all endpoints** with detailed descriptions
+- **Try it out** feature to test APIs directly from browser
+- **Request/response schemas** with validation rules
+- **Example values** for quick testing
+- **Download OpenAPI specification** in JSON or YAML format
+
+For detailed Swagger UI documentation, see:
+- **Quick Start**: [SWAGGER_QUICKSTART.md](SWAGGER_QUICKSTART.md)
+- **Complete Guide**: [docs/OPENAPI_SWAGGER.md](docs/OPENAPI_SWAGGER.md)
 
 ### Document Endpoints
 

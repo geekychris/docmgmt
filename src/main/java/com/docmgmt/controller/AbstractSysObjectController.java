@@ -4,6 +4,10 @@ import com.docmgmt.dto.BaseSysObjectDTO;
 import com.docmgmt.dto.SysObjectVersionDTO;
 import com.docmgmt.model.SysObject;
 import com.docmgmt.service.AbstractSysObjectService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -61,6 +65,7 @@ public abstract class AbstractSysObjectController<T extends SysObject, D extends
      * Get all objects
      * @return List of all objects as DTOs
      */
+    @Operation(summary = "Get all items", description = "Retrieve all items including all versions")
     @GetMapping
     public ResponseEntity<List<D>> getAll() {
         try {
@@ -79,6 +84,7 @@ public abstract class AbstractSysObjectController<T extends SysObject, D extends
      * Get all latest versions
      * @return List of latest versions as DTOs
      */
+    @Operation(summary = "Get latest versions", description = "Retrieve only the latest version of each item")
     @GetMapping("/latest")
     public ResponseEntity<List<D>> getAllLatestVersions() {
         try {
@@ -98,8 +104,13 @@ public abstract class AbstractSysObjectController<T extends SysObject, D extends
      * @param id The object ID
      * @return The object as DTO
      */
+    @Operation(summary = "Get item by ID", description = "Retrieve a specific item by its ID")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Item found"),
+        @ApiResponse(responseCode = "404", description = "Item not found")
+    })
     @GetMapping("/{id}")
-    public ResponseEntity<D> getById(@PathVariable Long id) {
+    public ResponseEntity<D> getById(@Parameter(description = "Item ID") @PathVariable Long id) {
         try {
             T entity = service.findById(id);
             return ResponseEntity.ok(toDTO(entity));
@@ -116,6 +127,11 @@ public abstract class AbstractSysObjectController<T extends SysObject, D extends
      * @param dto The object data as DTO
      * @return The created object as DTO
      */
+    @Operation(summary = "Create item", description = "Create a new item")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "201", description = "Item created"),
+        @ApiResponse(responseCode = "400", description = "Invalid input")
+    })
     @PostMapping
     public ResponseEntity<D> create(@Valid @RequestBody D dto) {
         try {
@@ -140,8 +156,16 @@ public abstract class AbstractSysObjectController<T extends SysObject, D extends
      * @param dto The updated object data as DTO
      * @return The updated object as DTO
      */
+    @Operation(summary = "Update item", description = "Update an existing item")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Item updated"),
+        @ApiResponse(responseCode = "404", description = "Item not found"),
+        @ApiResponse(responseCode = "400", description = "Invalid input")
+    })
     @PutMapping("/{id}")
-    public ResponseEntity<D> update(@PathVariable Long id, @Valid @RequestBody D dto) {
+    public ResponseEntity<D> update(
+            @Parameter(description = "Item ID") @PathVariable Long id, 
+            @Valid @RequestBody D dto) {
         try {
             T entity = service.findById(id);
             
@@ -165,8 +189,13 @@ public abstract class AbstractSysObjectController<T extends SysObject, D extends
      * @param id The object ID
      * @return Empty response with NO_CONTENT status
      */
+    @Operation(summary = "Delete item", description = "Delete an item by ID")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "204", description = "Item deleted"),
+        @ApiResponse(responseCode = "404", description = "Item not found")
+    })
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    public ResponseEntity<Void> delete(@Parameter(description = "Item ID") @PathVariable Long id) {
         try {
             service.delete(id);
             return ResponseEntity.noContent().build();
@@ -183,8 +212,17 @@ public abstract class AbstractSysObjectController<T extends SysObject, D extends
      * @param id The object ID
      * @return The new version as DTO
      */
+    @Operation(
+        summary = "Create major version",
+        description = "Create a new major version (e.g., 1.0 → 2.0)"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "201", description = "Major version created"),
+        @ApiResponse(responseCode = "404", description = "Item not found")
+    })
     @PostMapping("/{id}/versions/major")
-    public ResponseEntity<D> createMajorVersion(@PathVariable Long id) {
+    public ResponseEntity<D> createMajorVersion(
+            @Parameter(description = "Item ID") @PathVariable Long id) {
         try {
             T newVersion = service.createMajorVersion(id);
             return ResponseEntity.status(HttpStatus.CREATED).body(toDTO(newVersion));
@@ -201,8 +239,17 @@ public abstract class AbstractSysObjectController<T extends SysObject, D extends
      * @param id The object ID
      * @return The new version as DTO
      */
+    @Operation(
+        summary = "Create minor version",
+        description = "Create a new minor version (e.g., 1.0 → 1.1)"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "201", description = "Minor version created"),
+        @ApiResponse(responseCode = "404", description = "Item not found")
+    })
     @PostMapping("/{id}/versions/minor")
-    public ResponseEntity<D> createMinorVersion(@PathVariable Long id) {
+    public ResponseEntity<D> createMinorVersion(
+            @Parameter(description = "Item ID") @PathVariable Long id) {
         try {
             T newVersion = service.createMinorVersion(id);
             return ResponseEntity.status(HttpStatus.CREATED).body(toDTO(newVersion));
@@ -219,8 +266,17 @@ public abstract class AbstractSysObjectController<T extends SysObject, D extends
      * @param id The object ID
      * @return List of version information DTOs
      */
+    @Operation(
+        summary = "Get version history",
+        description = "Retrieve complete version history for an item"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Version history retrieved"),
+        @ApiResponse(responseCode = "404", description = "Item not found")
+    })
     @GetMapping("/{id}/versions/history")
-    public ResponseEntity<List<SysObjectVersionDTO>> getVersionHistory(@PathVariable Long id) {
+    public ResponseEntity<List<SysObjectVersionDTO>> getVersionHistory(
+            @Parameter(description = "Item ID") @PathVariable Long id) {
         try {
             List<T> history = service.getVersionHistory(id);
             

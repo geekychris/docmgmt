@@ -6,6 +6,11 @@ import com.docmgmt.model.Content;
 import com.docmgmt.model.SysObject;
 import com.docmgmt.service.AbstractSysObjectService;
 import com.docmgmt.service.ContentService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -32,6 +37,7 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/content")
+@Tag(name = "Content", description = "Content management operations including upload, download, and storage migration")
 public class ContentController {
 
     private static final Logger logger = LoggerFactory.getLogger(ContentController.class);
@@ -51,8 +57,14 @@ public class ContentController {
      * @param id The content ID
      * @return Content metadata DTO
      */
+    @Operation(summary = "Get content metadata", description = "Retrieve content metadata by ID")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Content found"),
+        @ApiResponse(responseCode = "404", description = "Content not found")
+    })
     @GetMapping("/{id}")
-    public ResponseEntity<ContentDTO> getContentById(@PathVariable Long id) {
+    public ResponseEntity<ContentDTO> getContentById(
+            @Parameter(description = "Content ID", required = true) @PathVariable Long id) {
         try {
             Content content = contentService.findById(id);
             return ResponseEntity.ok(ContentDTO.fromEntity(content));
@@ -69,8 +81,17 @@ public class ContentController {
      * @param sysObjectId The ID of the SysObject to find content for
      * @return List of content metadata DTOs
      */
+    @Operation(
+        summary = "List content for document",
+        description = "Retrieve all content items (primary and secondary renditions) for a document"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Content list retrieved"),
+        @ApiResponse(responseCode = "500", description = "Error retrieving content")
+    })
     @GetMapping("/by-sysobject/{sysObjectId}")
-    public ResponseEntity<List<ContentDTO>> getContentBySysObject(@PathVariable Long sysObjectId) {
+    public ResponseEntity<List<ContentDTO>> getContentBySysObject(
+            @Parameter(description = "Document ID", required = true) @PathVariable Long sysObjectId) {
         try {
             // Find the SysObject by ID
             SysObject sysObject = findSysObjectById(sysObjectId);
@@ -93,10 +114,19 @@ public class ContentController {
      * @param uploadDTO The upload parameters
      * @return The uploaded content metadata DTO
      */
+    @Operation(
+        summary = "Upload content",
+        description = "Upload a file as content for a document. Can be stored in database or file system."
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "201", description = "Content uploaded successfully"),
+        @ApiResponse(responseCode = "400", description = "Invalid request"),
+        @ApiResponse(responseCode = "500", description = "Error uploading content")
+    })
     @PostMapping("/upload")
     @Transactional
     public ResponseEntity<ContentDTO> uploadContent(
-            @RequestParam("file") MultipartFile file,
+            @Parameter(description = "File to upload") @RequestParam("file") MultipartFile file,
             @Valid @ModelAttribute ContentUploadDTO uploadDTO) {
         
         try {
@@ -134,8 +164,18 @@ public class ContentController {
      * @param id The content ID
      * @return The content as a downloadable resource
      */
+    @Operation(
+        summary = "Download content",
+        description = "Download the actual content bytes of a content item"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Content downloaded"),
+        @ApiResponse(responseCode = "404", description = "Content not found"),
+        @ApiResponse(responseCode = "500", description = "Error reading content")
+    })
     @GetMapping("/{id}/download")
-    public ResponseEntity<ByteArrayResource> downloadContent(@PathVariable Long id) {
+    public ResponseEntity<ByteArrayResource> downloadContent(
+            @Parameter(description = "Content ID", required = true) @PathVariable Long id) {
         try {
             Content content = contentService.findById(id);
             byte[] data = contentService.getContentBytes(id);
