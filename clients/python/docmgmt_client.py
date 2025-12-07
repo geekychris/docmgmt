@@ -454,6 +454,99 @@ class DocumentManagementClient:
         """
         response = self.session.delete(f"{self.base_url}/content/{content_id}")
         response.raise_for_status()
+    
+    # =========================================================================
+    # Content Transformation & Renditions
+    # =========================================================================
+    
+    def transform_content(self, content_id: int) -> Dict[str, Any]:
+        """
+        Transform primary content to text rendition (e.g., PDF to text).
+        Creates a secondary rendition that is marked as indexable.
+        
+        Args:
+            content_id: Primary content ID to transform
+            
+        Returns:
+            Created text rendition metadata
+        """
+        # Note: This would need a REST endpoint. For now, use direct service call pattern
+        # In practice, you'd add POST /api/content/{id}/transform endpoint
+        raise NotImplementedError(
+            "Transform endpoint not yet exposed via REST. "
+            "Use the UI transform button or call ContentService.transformAndAddRendition() directly."
+        )
+    
+    # =========================================================================
+    # Search Operations  
+    # =========================================================================
+    
+    def search(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Search documents across all fields.
+        
+        Args:
+            query: Search query string (supports Lucene syntax)
+            limit: Maximum number of results
+            
+        Returns:
+            List of search results with document ID, score, and metadata
+        """
+        response = self.session.get(
+            f"{self.base_url}/search",
+            params={'q': query, 'limit': limit}
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    def search_fields(
+        self,
+        field_queries: Dict[str, str],
+        operator: str = "AND",
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """
+        Search documents with field-specific queries.
+        
+        Args:
+            field_queries: Dict mapping field names to query strings
+                          Fields: 'name', 'description', 'keywords', 'tags', 'content'
+            operator: 'AND' or 'OR' for combining field queries
+            limit: Maximum number of results
+            
+        Returns:
+            List of search results
+        """
+        response = self.session.post(
+            f"{self.base_url}/search/fields",
+            params={'operator': operator, 'limit': limit},
+            json=field_queries
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    def rebuild_search_index(self) -> str:
+        """
+        Rebuild the search index from all documents.
+        This should be called after bulk imports or database changes.
+        
+        Returns:
+            Success message
+        """
+        response = self.session.post(f"{self.base_url}/search/rebuild")
+        response.raise_for_status()
+        return response.text
+    
+    def get_search_stats(self) -> Dict[str, Any]:
+        """
+        Get search index statistics.
+        
+        Returns:
+            Dict with documentCount, maxDoc, deletedDocs
+        """
+        response = self.session.get(f"{self.base_url}/search/stats")
+        response.raise_for_status()
+        return response.json()
 
 
 def _fmt_version(obj: Dict[str, Any]) -> str:

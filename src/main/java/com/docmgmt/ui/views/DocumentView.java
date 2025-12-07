@@ -538,6 +538,33 @@ public class DocumentView extends VerticalLayout {
         contentGrid.setSizeFull();
         contentGrid.addColumn(Content::getName).setHeader("File Name").setAutoWidth(true);
         contentGrid.addColumn(Content::getContentType).setHeader("Type").setAutoWidth(true);
+        
+        // Add rendition type column with badge
+        contentGrid.addComponentColumn(content -> {
+            Span badge = new Span(content.isPrimary() ? "Primary" : "Secondary");
+            if (content.isPrimary()) {
+                badge.getElement().getThemeList().add("badge success");
+            } else {
+                badge.getElement().getThemeList().add("badge");
+            }
+            return badge;
+        }).setHeader("Rendition").setAutoWidth(true);
+        
+        // Add indexable column with icon
+        contentGrid.addComponentColumn(content -> {
+            if (content.isIndexable()) {
+                Icon icon = new Icon(VaadinIcon.CHECK_CIRCLE);
+                icon.setColor("var(--lumo-success-color)");
+                icon.getElement().setAttribute("title", "Indexable");
+                return icon;
+            } else {
+                Icon icon = new Icon(VaadinIcon.MINUS_CIRCLE);
+                icon.setColor("var(--lumo-disabled-text-color)");
+                icon.getElement().setAttribute("title", "Not indexable");
+                return icon;
+            }
+        }).setHeader("Indexable").setAutoWidth(true);
+        
         contentGrid.addColumn(content -> {
             if (content.isStoredInDatabase()) {
                 return "Database";
@@ -559,7 +586,7 @@ public class DocumentView extends VerticalLayout {
             return "0 bytes";
         }).setHeader("Size").setAutoWidth(true);
         
-        // Add actions column with view/download buttons
+        // Add actions column with view/download/transform buttons
         contentGrid.addComponentColumn(content -> {
             Button viewButton = new Button(new Icon(VaadinIcon.EYE));
             viewButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
@@ -572,6 +599,16 @@ public class DocumentView extends VerticalLayout {
             downloadButton.getElement().setAttribute("title", "Download content");
             
             HorizontalLayout actions = new HorizontalLayout(viewButton, downloadButton);
+            
+            // Add transform button for primary content
+            if (content.isPrimary()) {
+                Button transformButton = new Button(new Icon(VaadinIcon.MAGIC));
+                transformButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_SUCCESS);
+                transformButton.addClickListener(e -> transformContent(content));
+                transformButton.getElement().setAttribute("title", "Transform to text");
+                actions.add(transformButton);
+            }
+            
             actions.setSpacing(false);
             return actions;
         }).setHeader("Actions").setAutoWidth(true);
@@ -683,6 +720,48 @@ public class DocumentView extends VerticalLayout {
                 3000, Notification.Position.BOTTOM_START)
                 .addThemeVariants(NotificationVariant.LUMO_ERROR);
         }
+    }
+    
+    private void transformContent(Content content) {
+        Dialog confirmDialog = new Dialog();
+        confirmDialog.setWidth("400px");
+        
+        H2 title = new H2("Transform Content");
+        Span message = new Span("Transform " + content.getName() + " to searchable text?");
+        message.getStyle().set("display", "block").set("margin-bottom", "1em");
+        
+        Button cancelButton = new Button("Cancel", e -> confirmDialog.close());
+        Button transformButton = new Button("Transform", e -> {
+            try {
+                contentService.transformAndAddRendition(content.getId(), null);
+                
+                // Refresh content display
+                Document doc = (Document) content.getSysObject();
+                showContentForDocument(doc);
+                
+                Notification.show("Content transformed successfully", 
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                    
+                confirmDialog.close();
+            } catch (Exception ex) {
+                Notification.show("Failed to transform content: " + ex.getMessage(), 
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            }
+        });
+        transformButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        
+        HorizontalLayout buttons = new HorizontalLayout(cancelButton, transformButton);
+        buttons.setJustifyContentMode(FlexComponent.JustifyContentMode.END);
+        buttons.setWidthFull();
+        
+        VerticalLayout layout = new VerticalLayout(title, new Hr(), message, buttons);
+        layout.setPadding(false);
+        layout.setSpacing(false);
+        
+        confirmDialog.add(layout);
+        confirmDialog.open();
     }
     
     private void downloadContent(Content content) {

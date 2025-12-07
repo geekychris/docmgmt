@@ -4,6 +4,9 @@ import com.docmgmt.model.Content;
 import com.docmgmt.model.FileStore;
 import com.docmgmt.model.SysObject;
 import com.docmgmt.repository.ContentRepository;
+import com.docmgmt.transformer.TransformerRegistry;
+import com.docmgmt.transformer.ContentTransformer;
+import com.docmgmt.transformer.TransformationException;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.PersistenceContext;
@@ -31,14 +34,17 @@ public class ContentService {
 
     private final ContentRepository contentRepository;
     private final FileStoreService fileStoreService;
+    private final TransformerRegistry transformerRegistry;
     
     @PersistenceContext
     private EntityManager entityManager;
 
     @Autowired
-    public ContentService(ContentRepository contentRepository, FileStoreService fileStoreService) {
+    public ContentService(ContentRepository contentRepository, FileStoreService fileStoreService,
+                         TransformerRegistry transformerRegistry) {
         this.contentRepository = contentRepository;
         this.fileStoreService = fileStoreService;
+        this.transformerRegistry = transformerRegistry;
     }
 
     /**
@@ -298,6 +304,161 @@ public class ContentService {
         content.setStoragePath(null);
         
         return contentRepository.save(content);
+    }
+
+    /**
+     * Add a secondary rendition to a primary content
+     * @param primaryContentId The primary content ID
+     * @param renditionName The name for the rendition
+     * @param renditionBytes The rendition content bytes
+     * @param renditionContentType The content type of the rendition
+     * @param isIndexable Whether the rendition is indexable
+     * @return The created rendition
+     */
+    @Transactional
+    public Content addRendition(Long primaryContentId, String renditionName, byte[] renditionBytes,
+                                String renditionContentType, boolean isIndexable) {
+        Content primaryContent = findById(primaryContentId);
+        
+        if (!primaryContent.isPrimary()) {
+            throw new IllegalArgumentException("Can only add renditions to primary content");
+        }
+        
+        Content rendition = Content.builder()
+                .name(renditionName)
+                .contentType(renditionContentType)
+                .content(renditionBytes)
+                .isPrimary(false)
+                .isIndexable(isIndexable)
+                .sysObject(primaryContent.getSysObject())
+                .build();
+        
+        primaryContent.addSecondaryRendition(rendition);
+        contentRepository.save(rendition);
+        
+        return rendition;
+    }
+
+    /**
+     * Transform content using an available transformer and add as secondary rendition
+     * @param primaryContentId The primary content ID to transform
+     * @param targetContentType The desired target content type (optional, will auto-select if null)
+     * @return The created rendition
+     * @throws TransformationException if no suitable transformer is found or transformation fails
+     * @throws IOException if there's an error reading/writing content
+     */
+    @Transactional
+    public Content transformAndAddRendition(Long primaryContentId, String targetContentType) 
+            throws TransformationException, IOException {
+        Content primaryContent = findById(primaryContentId);
+        
+        if (!primaryContent.isPrimary()) {
+            throw new IllegalArgumentException("Can only transform primary content");
+        }
+        
+        // Find appropriate transformer
+        ContentTransformer transformer;
+        if (targetContentType != null) {
+            transformer = transformerRegistry.findTransformer(
+                primaryContent.getContentType(), targetContentType
+            ).orElseThrow(() -> new TransformationException(
+                String.format("No transformer found for %s -> %s", 
+                    primaryContent.getContentType(), targetContentType)
+            ));
+        } else {
+            transformer = transformerRegistry.findTransformer(primaryContent)
+                .orElseThrow(() -> new TransformationException(
+                    "No transformer found for content type: " + primaryContent.getContentType()
+                ));
+        }
+        
+        // Transform the content
+        byte[] transformedBytes = transformer.transform(primaryContent);
+        
+        // Create rendition name
+        String renditionName = primaryContent.getName() + "." + 
+                               transformer.getTargetContentType().split("/")[1];
+        
+        // Add as secondary rendition
+        return addRendition(
+            primaryContentId,
+            renditionName,
+            transformedBytes,
+            transformer.getTargetContentType(),
+            transformer.producesIndexableContent()
+        );
+    }
+
+    /**
+     * Remove all secondary renditions from a primary content
+     * @param primaryContentId The primary content ID
+     */
+    @Transactional
+    public void removeSecondaryRenditions(Long primaryContentId) {
+        Content primaryContent = findById(primaryContentId);
+        
+        if (!primaryContent.isPrimary()) {
+            throw new IllegalArgumentException("Can only remove renditions from primary content");
+        }
+        
+        primaryContent.removeAllSecondaryRenditions();
+        contentRepository.save(primaryContent);
+    }
+
+    /**
+     * Get all indexable content for a SysObject
+     * @param sysObject The SysObject
+     * @return List of indexable content
+     */
+    @Transactional(readOnly = true)
+    public List<Content> getIndexableContent(SysObject sysObject) {
+        return contentRepository.findBySysObject(sysObject).stream()
+                .filter(Content::isIndexable)
+                .toList();
+    }
+
+    /**
+     * Update primary content - automatically removes secondary renditions
+     * @param contentId The content ID
+     * @param newBytes The new content bytes
+     * @return The updated content
+     * @throws IOException if there's an error writing content
+     */
+    @Transactional
+    public Content updatePrimaryContent(Long contentId, byte[] newBytes) throws IOException {
+        Content content = findById(contentId);
+        
+        if (!content.isPrimary()) {
+            throw new IllegalArgumentException("Can only update primary content with this method");
+        }
+        
+        // Remove all secondary renditions when primary changes
+        content.removeAllSecondaryRenditions();
+        
+        // Update the content
+        content.setContentBytes(newBytes);
+        
+        return contentRepository.save(content);
+    }
+
+    /**
+     * Get all renditions (primary + secondary) for a content item
+     * @param primaryContentId The primary content ID
+     * @return List containing the primary content and all its secondary renditions
+     */
+    @Transactional(readOnly = true)
+    public List<Content> getAllRenditions(Long primaryContentId) {
+        Content primaryContent = findById(primaryContentId);
+        
+        if (!primaryContent.isPrimary()) {
+            throw new IllegalArgumentException("Content is not primary");
+        }
+        
+        List<Content> renditions = new java.util.ArrayList<>();
+        renditions.add(primaryContent);
+        renditions.addAll(primaryContent.getSecondaryRenditions());
+        
+        return renditions;
     }
 }
 

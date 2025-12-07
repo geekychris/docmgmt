@@ -20,8 +20,8 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder(toBuilder = true)
-@EqualsAndHashCode(exclude = {"sysObject", "fileStore"})
-@ToString(exclude = {"sysObject", "fileStore"})
+@EqualsAndHashCode(exclude = {"sysObject", "fileStore", "parentRendition", "secondaryRenditions"})
+@ToString(exclude = {"sysObject", "fileStore", "parentRendition", "secondaryRenditions"})
 public class Content {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -51,6 +51,25 @@ public class Content {
     @JsonIgnore
     private SysObject sysObject;
 
+    // Rendition support
+    @Column(name = "is_primary", nullable = false)
+    @Builder.Default
+    private boolean isPrimary = true;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_rendition_id")
+    @JsonIgnore
+    private Content parentRendition;
+
+    @OneToMany(mappedBy = "parentRendition", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore
+    @Builder.Default
+    private java.util.List<Content> secondaryRenditions = new java.util.ArrayList<>();
+
+    @Column(name = "is_indexable", nullable = false)
+    @Builder.Default
+    private boolean isIndexable = false;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
@@ -60,6 +79,46 @@ public class Content {
     @Column(name = "modified_at", nullable = false)
     @Builder.Default
     private LocalDateTime modifiedAt = LocalDateTime.now();
+    /**
+     * Checks if this is a secondary rendition
+     * @return true if this is a secondary rendition (has a parent), false otherwise
+     */
+    public boolean isSecondaryRendition() {
+        return !isPrimary && parentRendition != null;
+    }
+
+    /**
+     * Adds a secondary rendition to this content
+     * @param secondary the secondary rendition to add
+     */
+    public void addSecondaryRendition(Content secondary) {
+        if (secondary != null) {
+            secondary.setParentRendition(this);
+            secondary.setPrimary(false);
+            secondaryRenditions.add(secondary);
+        }
+    }
+
+    /**
+     * Removes a secondary rendition from this content
+     * @param secondary the secondary rendition to remove
+     */
+    public void removeSecondaryRendition(Content secondary) {
+        if (secondary != null) {
+            secondaryRenditions.remove(secondary);
+            secondary.setParentRendition(null);
+        }
+    }
+
+    /**
+     * Removes all secondary renditions from this content
+     */
+    public void removeAllSecondaryRenditions() {
+        for (Content secondary : new java.util.ArrayList<>(secondaryRenditions)) {
+            removeSecondaryRendition(secondary);
+        }
+    }
+
     /**
      * Checks if the content is stored in the database
      * @return true if content is stored in the database, false otherwise
@@ -189,9 +248,12 @@ public class Content {
                 .content(this.content)
                 .fileStore(this.fileStore)
                 .storagePath(this.storagePath)
+                .isPrimary(this.isPrimary)
+                .isIndexable(this.isIndexable)
                 .build();
         
         // Don't clone the SysObject reference - this should be set by caller
+        // Don't clone parent/secondary renditions - these should be managed separately
         // This prevents accidental sharing of content between different objects
         
         return clone;
