@@ -671,13 +671,32 @@ public class DocumentView extends VerticalLayout {
             
             // Display content based on type
             if (contentType != null && contentType.startsWith("text/")) {
-                TextArea textArea = new TextArea();
-                textArea.setValue(new String(bytes));
-                textArea.setReadOnly(true);
-                textArea.setSizeFull();
-                contentLayout.add(textArea);
+                // Display text content with monospace font
+                com.vaadin.flow.component.html.Pre pre = new com.vaadin.flow.component.html.Pre();
+                pre.setText(new String(bytes));
+                pre.getStyle()
+                    .set("white-space", "pre-wrap")
+                    .set("font-family", "monospace")
+                    .set("font-size", "12px")
+                    .set("padding", "1em")
+                    .set("background-color", "var(--lumo-contrast-5pct)")
+                    .set("border-radius", "4px")
+                    .set("overflow", "auto")
+                    .set("max-height", "100%");
+                contentLayout.add(pre);
+                
+            } else if (contentType != null && contentType.equals("application/pdf")) {
+                // Display PDF using iframe with base64 data URI
+                String base64 = java.util.Base64.getEncoder().encodeToString(bytes);
+                String dataUri = "data:application/pdf;base64," + base64;
+                
+                com.vaadin.flow.component.html.IFrame iframe = new com.vaadin.flow.component.html.IFrame(dataUri);
+                iframe.setSizeFull();
+                iframe.getStyle().set("border", "none");
+                contentLayout.add(iframe);
+                
             } else if (contentType != null && contentType.startsWith("image/")) {
-                // For images, create a data URL
+                // Display image
                 String base64 = java.util.Base64.getEncoder().encodeToString(bytes);
                 String dataUrl = "data:" + contentType + ";base64," + base64;
                 
@@ -687,14 +706,20 @@ public class DocumentView extends VerticalLayout {
                 image.getStyle().set("display", "block").set("margin", "auto");
                 contentLayout.add(image);
                 contentLayout.setAlignItems(FlexComponent.Alignment.CENTER);
+                
             } else {
-                Span message = new Span("Preview not available for this file type. Size: " + bytes.length + " bytes");
+                // Unsupported type - show download option
+                Span message = new Span("Preview not available for this file type: " + contentType);
                 message.getStyle().set("padding", "2em");
                 
+                Span sizeInfo = new Span("Size: " + formatBytes((long) bytes.length));
+                sizeInfo.getStyle().set("margin-top", "10px");
+                
                 Button downloadBtn = new Button("Download File", new Icon(VaadinIcon.DOWNLOAD));
+                downloadBtn.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
                 downloadBtn.addClickListener(e -> downloadContent(content));
                 
-                contentLayout.add(message, downloadBtn);
+                contentLayout.add(message, sizeInfo, downloadBtn);
                 contentLayout.setAlignItems(FlexComponent.Alignment.CENTER);
             }
             
@@ -1080,5 +1105,16 @@ public class DocumentView extends VerticalLayout {
             3000, 
             Notification.Position.BOTTOM_START
         ).addThemeVariants(NotificationVariant.LUMO_ERROR);
+    }
+    
+    /**
+     * Format bytes to human readable string
+     */
+    private String formatBytes(Long bytes) {
+        if (bytes == null) return "0 B";
+        if (bytes < 1024) return bytes + " B";
+        int exp = (int) (Math.log(bytes) / Math.log(1024));
+        char pre = "KMGTPE".charAt(exp - 1);
+        return String.format("%.1f %sB", bytes / Math.pow(1024, exp), pre);
     }
 }

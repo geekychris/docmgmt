@@ -5,15 +5,22 @@ import com.docmgmt.model.Document;
 import com.docmgmt.model.User;
 import com.docmgmt.service.ContentService;
 import com.docmgmt.service.DocumentService;
+import com.docmgmt.service.UserService;
 import com.docmgmt.ui.MainLayout;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.checkbox.Checkbox;
+import com.vaadin.flow.component.combobox.ComboBox;
+import com.vaadin.flow.component.combobox.MultiSelectComboBox;
+import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.html.*;
 import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
+import com.vaadin.flow.component.textfield.TextArea;
+import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
@@ -26,7 +33,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Route(value = "document", layout = MainLayout.class)
@@ -35,16 +42,21 @@ public class DocumentDetailView extends VerticalLayout implements HasUrlParamete
 
     private final DocumentService documentService;
     private final ContentService contentService;
+    private final UserService userService;
     
     private Document currentDocument;
     private VerticalLayout documentInfoPanel;
     private VerticalLayout contentPanel;
     private Grid<Content> contentGrid;
+    private boolean editMode = false;
+    private Button editToggleButton;
+    private Checkbox editModeCheckbox;
     
     @Autowired
-    public DocumentDetailView(DocumentService documentService, ContentService contentService) {
+    public DocumentDetailView(DocumentService documentService, ContentService contentService, UserService userService) {
         this.documentService = documentService;
         this.contentService = contentService;
+        this.userService = userService;
         
         addClassName("document-detail-view");
         setSizeFull();
@@ -86,8 +98,17 @@ public class DocumentDetailView extends VerticalLayout implements HasUrlParamete
         Button backToDocumentsButton = new Button("Back to Documents", new Icon(VaadinIcon.ARROW_LEFT));
         backToDocumentsButton.addClickListener(e -> UI.getCurrent().navigate(""));
         
-        HorizontalLayout headerButtons = new HorizontalLayout(backButton, backToDocumentsButton);
+        // Edit mode toggle
+        editModeCheckbox = new Checkbox("Edit Mode");
+        editModeCheckbox.setValue(editMode);
+        editModeCheckbox.addValueChangeListener(e -> {
+            editMode = e.getValue();
+            refreshDocumentInfo();
+        });
+        
+        HorizontalLayout headerButtons = new HorizontalLayout(backButton, backToDocumentsButton, editModeCheckbox);
         headerButtons.setSpacing(true);
+        headerButtons.setAlignItems(FlexComponent.Alignment.CENTER);
         
         H2 title = new H2("Document Details");
         
@@ -121,47 +142,222 @@ public class DocumentDetailView extends VerticalLayout implements HasUrlParamete
         
         H3 infoTitle = new H3("Document Information");
         
-        // Create styled information display
-        VerticalLayout infoLayout = new VerticalLayout();
-        infoLayout.setSpacing(true);
-        infoLayout.setPadding(false);
-        
-        addInfoRow(infoLayout, "Name:", currentDocument.getName());
-        addInfoRow(infoLayout, "Type:", currentDocument.getDocumentType().toString());
-        addInfoRow(infoLayout, "Description:", currentDocument.getDescription());
-        addInfoRow(infoLayout, "Keywords:", currentDocument.getKeywords());
-        
-        if (currentDocument.getTags() != null && !currentDocument.getTags().isEmpty()) {
-            addInfoRow(infoLayout, "Tags:", String.join(", ", currentDocument.getTags()));
+        if (editMode) {
+            // Editable form
+            FormLayout formLayout = createEditableForm();
+            
+            // Save button
+            Button saveButton = new Button("Save Changes", new Icon(VaadinIcon.CHECK));
+            saveButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+            saveButton.addClickListener(e -> saveDocument());
+            
+            Button cancelButton = new Button("Cancel", new Icon(VaadinIcon.CLOSE));
+            cancelButton.addClickListener(e -> {
+                editMode = false;
+                editModeCheckbox.setValue(false);
+                refreshDocumentInfo();
+            });
+            
+            HorizontalLayout buttonLayout = new HorizontalLayout(saveButton, cancelButton);
+            buttonLayout.setSpacing(true);
+            
+            panel.add(infoTitle, formLayout, buttonLayout);
+        } else {
+            // Read-only display
+            VerticalLayout infoLayout = new VerticalLayout();
+            infoLayout.setSpacing(true);
+            infoLayout.setPadding(false);
+            
+            addInfoRow(infoLayout, "Name:", currentDocument.getName());
+            addInfoRow(infoLayout, "Type:", currentDocument.getDocumentType().toString());
+            addInfoRow(infoLayout, "Description:", currentDocument.getDescription());
+            addInfoRow(infoLayout, "Keywords:", currentDocument.getKeywords());
+            
+            if (currentDocument.getTags() != null && !currentDocument.getTags().isEmpty()) {
+                addInfoRow(infoLayout, "Tags:", String.join(", ", currentDocument.getTags()));
+            }
+            
+            if (currentDocument.getOwner() != null) {
+                addInfoRow(infoLayout, "Owner:", currentDocument.getOwner().getUsername());
+            }
+            
+            if (currentDocument.getAuthors() != null && !currentDocument.getAuthors().isEmpty()) {
+                String authors = currentDocument.getAuthors().stream()
+                    .map(User::getUsername)
+                    .collect(Collectors.joining(", "));
+                addInfoRow(infoLayout, "Authors:", authors);
+            }
+            
+            addInfoRow(infoLayout, "Version:", 
+                currentDocument.getMajorVersion() + "." + currentDocument.getMinorVersion());
+            
+            if (currentDocument.getParentVersion() != null) {
+                addInfoRow(infoLayout, "Parent Version:", 
+                    currentDocument.getParentVersion().getMajorVersion() + "." + 
+                    currentDocument.getParentVersion().getMinorVersion());
+            }
+            
+            addInfoRow(infoLayout, "Created:", 
+                currentDocument.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            addInfoRow(infoLayout, "Modified:", 
+                currentDocument.getModifiedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            
+            panel.add(infoTitle, infoLayout);
         }
         
-        if (currentDocument.getOwner() != null) {
-            addInfoRow(infoLayout, "Owner:", currentDocument.getOwner().getUsername());
-        }
-        
-        if (currentDocument.getAuthors() != null && !currentDocument.getAuthors().isEmpty()) {
-            String authors = currentDocument.getAuthors().stream()
-                .map(User::getUsername)
-                .collect(Collectors.joining(", "));
-            addInfoRow(infoLayout, "Authors:", authors);
-        }
-        
-        addInfoRow(infoLayout, "Version:", 
-            currentDocument.getMajorVersion() + "." + currentDocument.getMinorVersion());
-        
-        if (currentDocument.getParentVersion() != null) {
-            addInfoRow(infoLayout, "Parent Version:", 
-                currentDocument.getParentVersion().getMajorVersion() + "." + 
-                currentDocument.getParentVersion().getMinorVersion());
-        }
-        
-        addInfoRow(infoLayout, "Created:", 
-            currentDocument.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-        addInfoRow(infoLayout, "Modified:", 
-            currentDocument.getModifiedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-        
-        panel.add(infoTitle, infoLayout);
         return panel;
+    }
+    
+    private FormLayout createEditableForm() {
+        FormLayout formLayout = new FormLayout();
+        
+        TextField nameField = new TextField("Name");
+        nameField.setValue(currentDocument.getName() != null ? currentDocument.getName() : "");
+        nameField.setWidthFull();
+        
+        TextArea descriptionField = new TextArea("Description");
+        descriptionField.setValue(currentDocument.getDescription() != null ? currentDocument.getDescription() : "");
+        descriptionField.setWidthFull();
+        descriptionField.setHeight("100px");
+        
+        TextField keywordsField = new TextField("Keywords");
+        keywordsField.setValue(currentDocument.getKeywords() != null ? currentDocument.getKeywords() : "");
+        keywordsField.setWidthFull();
+        
+        TextArea tagsField = new TextArea("Tags (comma separated)");
+        if (currentDocument.getTags() != null && !currentDocument.getTags().isEmpty()) {
+            tagsField.setValue(String.join(", ", currentDocument.getTags()));
+        }
+        tagsField.setWidthFull();
+        tagsField.setHeight("80px");
+        
+        ComboBox<User> ownerCombo = new ComboBox<>("Owner");
+        ownerCombo.setItems(userService.findAll());
+        ownerCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
+        ownerCombo.setValue(currentDocument.getOwner());
+        ownerCombo.setWidthFull();
+        
+        MultiSelectComboBox<User> authorsCombo = new MultiSelectComboBox<>("Authors");
+        authorsCombo.setItems(userService.findAll());
+        authorsCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
+        if (currentDocument.getAuthors() != null) {
+            authorsCombo.setValue(currentDocument.getAuthors());
+        }
+        authorsCombo.setWidthFull();
+        
+        // Store field references for saving
+        nameField.addValueChangeListener(e -> currentDocument.setName(e.getValue()));
+        descriptionField.addValueChangeListener(e -> currentDocument.setDescription(e.getValue()));
+        keywordsField.addValueChangeListener(e -> currentDocument.setKeywords(e.getValue()));
+        tagsField.addValueChangeListener(e -> {
+            if (e.getValue() == null || e.getValue().trim().isEmpty()) {
+                currentDocument.setTags(new HashSet<>());
+            } else {
+                Set<String> tags = Arrays.stream(e.getValue().split(","))
+                    .map(String::trim)
+                    .filter(tag -> !tag.isEmpty())
+                    .collect(Collectors.toSet());
+                currentDocument.setTags(tags);
+            }
+        });
+        ownerCombo.addValueChangeListener(e -> currentDocument.setOwner(e.getValue()));
+        authorsCombo.addValueChangeListener(e -> {
+            currentDocument.getAuthors().clear();
+            if (e.getValue() != null) {
+                currentDocument.getAuthors().addAll(e.getValue());
+            }
+        });
+        
+        formLayout.add(nameField, descriptionField, keywordsField, tagsField, ownerCombo, authorsCombo);
+        formLayout.setResponsiveSteps(
+            new FormLayout.ResponsiveStep("0", 1)
+        );
+        
+        return formLayout;
+    }
+    
+    private void saveDocument() {
+        try {
+            documentService.save(currentDocument);
+            Notification.show("Document saved successfully", 
+                3000, Notification.Position.BOTTOM_START)
+                .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+            editMode = false;
+            editModeCheckbox.setValue(false);
+            refreshDocumentInfo();
+        } catch (Exception e) {
+            Notification.show("Failed to save document: " + e.getMessage(), 
+                3000, Notification.Position.BOTTOM_START)
+                .addThemeVariants(NotificationVariant.LUMO_ERROR);
+        }
+    }
+    
+    private void refreshDocumentInfo() {
+        // Reload document from database
+        currentDocument = documentService.findById(currentDocument.getId());
+        documentInfoPanel.removeAll();
+        
+        H3 infoTitle = new H3("Document Information");
+        
+        if (editMode) {
+            FormLayout formLayout = createEditableForm();
+            
+            Button saveButton = new Button("Save Changes", new Icon(VaadinIcon.CHECK));
+            saveButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+            saveButton.addClickListener(e -> saveDocument());
+            
+            Button cancelButton = new Button("Cancel", new Icon(VaadinIcon.CLOSE));
+            cancelButton.addClickListener(e -> {
+                editMode = false;
+                editModeCheckbox.setValue(false);
+                refreshDocumentInfo();
+            });
+            
+            HorizontalLayout buttonLayout = new HorizontalLayout(saveButton, cancelButton);
+            buttonLayout.setSpacing(true);
+            
+            documentInfoPanel.add(infoTitle, formLayout, buttonLayout);
+        } else {
+            VerticalLayout infoLayout = new VerticalLayout();
+            infoLayout.setSpacing(true);
+            infoLayout.setPadding(false);
+            
+            addInfoRow(infoLayout, "Name:", currentDocument.getName());
+            addInfoRow(infoLayout, "Type:", currentDocument.getDocumentType().toString());
+            addInfoRow(infoLayout, "Description:", currentDocument.getDescription());
+            addInfoRow(infoLayout, "Keywords:", currentDocument.getKeywords());
+            
+            if (currentDocument.getTags() != null && !currentDocument.getTags().isEmpty()) {
+                addInfoRow(infoLayout, "Tags:", String.join(", ", currentDocument.getTags()));
+            }
+            
+            if (currentDocument.getOwner() != null) {
+                addInfoRow(infoLayout, "Owner:", currentDocument.getOwner().getUsername());
+            }
+            
+            if (currentDocument.getAuthors() != null && !currentDocument.getAuthors().isEmpty()) {
+                String authors = currentDocument.getAuthors().stream()
+                    .map(User::getUsername)
+                    .collect(Collectors.joining(", "));
+                addInfoRow(infoLayout, "Authors:", authors);
+            }
+            
+            addInfoRow(infoLayout, "Version:", 
+                currentDocument.getMajorVersion() + "." + currentDocument.getMinorVersion());
+            
+            if (currentDocument.getParentVersion() != null) {
+                addInfoRow(infoLayout, "Parent Version:", 
+                    currentDocument.getParentVersion().getMajorVersion() + "." + 
+                    currentDocument.getParentVersion().getMinorVersion());
+            }
+            
+            addInfoRow(infoLayout, "Created:", 
+                currentDocument.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            addInfoRow(infoLayout, "Modified:", 
+                currentDocument.getModifiedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            
+            documentInfoPanel.add(infoTitle, infoLayout);
+        }
     }
     
     private void addInfoRow(VerticalLayout layout, String label, String value) {
@@ -313,13 +509,32 @@ public class DocumentDetailView extends VerticalLayout implements HasUrlParamete
             
             // Display content based on type
             if (contentType != null && contentType.startsWith("text/")) {
-                com.vaadin.flow.component.textfield.TextArea textArea = 
-                    new com.vaadin.flow.component.textfield.TextArea();
-                textArea.setValue(new String(bytes));
-                textArea.setReadOnly(true);
-                textArea.setSizeFull();
-                contentLayout.add(textArea);
+                // Display text content with monospace font
+                Pre pre = new Pre();
+                pre.setText(new String(bytes));
+                pre.getStyle()
+                    .set("white-space", "pre-wrap")
+                    .set("font-family", "monospace")
+                    .set("font-size", "12px")
+                    .set("padding", "1em")
+                    .set("background-color", "var(--lumo-contrast-5pct)")
+                    .set("border-radius", "4px")
+                    .set("overflow", "auto")
+                    .set("max-height", "100%");
+                contentLayout.add(pre);
+                
+            } else if (contentType != null && contentType.equals("application/pdf")) {
+                // Display PDF using iframe with base64 data URI
+                String base64 = java.util.Base64.getEncoder().encodeToString(bytes);
+                String dataUri = "data:application/pdf;base64," + base64;
+                
+                com.vaadin.flow.component.html.IFrame iframe = new com.vaadin.flow.component.html.IFrame(dataUri);
+                iframe.setSizeFull();
+                iframe.getStyle().set("border", "none");
+                contentLayout.add(iframe);
+                
             } else if (contentType != null && contentType.startsWith("image/")) {
+                // Display image
                 String base64 = java.util.Base64.getEncoder().encodeToString(bytes);
                 String dataUrl = "data:" + contentType + ";base64," + base64;
                 
@@ -328,15 +543,20 @@ public class DocumentDetailView extends VerticalLayout implements HasUrlParamete
                 image.getStyle().set("display", "block").set("margin", "auto");
                 contentLayout.add(image);
                 contentLayout.setAlignItems(FlexComponent.Alignment.CENTER);
+                
             } else {
-                Span message = new Span("Preview not available for this file type. Size: " + 
-                    formatBytes(bytes.length));
+                // Unsupported type - show download option
+                Span message = new Span("Preview not available for this file type: " + contentType);
                 message.getStyle().set("padding", "2em");
                 
+                Span sizeInfo = new Span("Size: " + formatBytes(bytes.length));
+                sizeInfo.getStyle().set("margin-top", "10px");
+                
                 Button downloadBtn = new Button("Download File", new Icon(VaadinIcon.DOWNLOAD));
+                downloadBtn.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
                 downloadBtn.addClickListener(e -> downloadContent(content));
                 
-                contentLayout.add(message, downloadBtn);
+                contentLayout.add(message, sizeInfo, downloadBtn);
                 contentLayout.setAlignItems(FlexComponent.Alignment.CENTER);
             }
             

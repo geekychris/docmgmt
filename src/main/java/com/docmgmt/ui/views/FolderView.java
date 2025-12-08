@@ -9,6 +9,7 @@ import com.docmgmt.service.UserService;
 import com.docmgmt.ui.MainLayout;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.formlayout.FormLayout;
@@ -35,7 +36,8 @@ import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Route(value = "folders", layout = MainLayout.class)
@@ -323,21 +325,24 @@ public class FolderView extends VerticalLayout {
     
     private void refreshFolderContents() {
         if (currentFolder != null) {
-            Folder refreshed = folderService.findById(currentFolder.getId());
+            // Use service method that eagerly loads all relationships within transaction
+            Folder refreshed = folderService.findByIdWithRelationships(currentFolder.getId());
             
             // Combine child folders and direct document items (excluding folders from items)
             List<SysObject> contents = new java.util.ArrayList<>();
             
-            // Add child folders
+            // Add child folders (already initialized by service)
             if (refreshed.getChildFolders() != null) {
                 contents.addAll(refreshed.getChildFolders());
             }
             
-            // Add only non-folder items (documents)
+            // Add only non-folder items (documents) (already initialized by service)
             if (refreshed.getItems() != null) {
-                refreshed.getItems().stream()
-                    .filter(item -> !(item instanceof Folder))
-                    .forEach(contents::add);
+                for (SysObject item : refreshed.getItems()) {
+                    if (!(item instanceof Folder)) {
+                        contents.add(item);
+                    }
+                }
             }
             
             itemsGrid.setItems(contents);
@@ -783,10 +788,15 @@ public class FolderView extends VerticalLayout {
         
         H2 title = new H2("Document: " + reloadedDoc.getName());
         
+        // Edit mode toggle
+        Checkbox editModeCheckbox = new Checkbox("Edit Mode");
+        editModeCheckbox.setValue(false);
+        
         // Document details form
         TextField nameField = new TextField("Name");
         nameField.setValue(reloadedDoc.getName());
         nameField.setWidthFull();
+        nameField.setReadOnly(true);
         
         TextField typeField = new TextField("Type");
         typeField.setValue(reloadedDoc.getDocumentType() != null ? reloadedDoc.getDocumentType().toString() : "");
@@ -797,6 +807,20 @@ public class FolderView extends VerticalLayout {
         descField.setValue(reloadedDoc.getDescription() != null ? reloadedDoc.getDescription() : "");
         descField.setWidthFull();
         descField.setHeight("80px");
+        descField.setReadOnly(true);
+        
+        TextArea tagsField = new TextArea("Tags");
+        if (reloadedDoc.getTags() != null && !reloadedDoc.getTags().isEmpty()) {
+            tagsField.setValue(String.join(", ", reloadedDoc.getTags()));
+        }
+        tagsField.setWidthFull();
+        tagsField.setHeight("60px");
+        tagsField.setReadOnly(true);
+        
+        TextField keywordsField = new TextField("Keywords");
+        keywordsField.setValue(reloadedDoc.getKeywords() != null ? reloadedDoc.getKeywords() : "");
+        keywordsField.setWidthFull();
+        keywordsField.setReadOnly(true);
         
         TextField versionField = new TextField("Version");
         versionField.setValue(reloadedDoc.getMajorVersion() + "." + reloadedDoc.getMinorVersion());
@@ -806,13 +830,45 @@ public class FolderView extends VerticalLayout {
         ownerField.setValue(reloadedDoc.getOwner() != null ? reloadedDoc.getOwner().getUsername() : "-");
         ownerField.setReadOnly(true);
         
-        FormLayout formLayout = new FormLayout(nameField, typeField, descField, versionField, ownerField);
+        ComboBox<User> ownerCombo = new ComboBox<>("Owner");
+        ownerCombo.setItems(userService.findAll());
+        ownerCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
+        ownerCombo.setValue(reloadedDoc.getOwner());
+        ownerCombo.setWidthFull();
+        ownerCombo.setVisible(false);
+        
+        MultiSelectComboBox<User> authorsCombo = new MultiSelectComboBox<>("Authors");
+        authorsCombo.setItems(userService.findAll());
+        authorsCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
+        if (reloadedDoc.getAuthors() != null) {
+            authorsCombo.setValue(reloadedDoc.getAuthors());
+        }
+        authorsCombo.setWidthFull();
+        authorsCombo.setVisible(false);
+        
+        FormLayout formLayout = new FormLayout(nameField, typeField, descField, tagsField, keywordsField, 
+            versionField, ownerField, ownerCombo, authorsCombo);
         formLayout.setResponsiveSteps(
             new FormLayout.ResponsiveStep("0", 1),
             new FormLayout.ResponsiveStep("500px", 2)
         );
         formLayout.setColspan(nameField, 2);
         formLayout.setColspan(descField, 2);
+        formLayout.setColspan(tagsField, 2);
+        formLayout.setColspan(keywordsField, 2);
+        formLayout.setColspan(authorsCombo, 2);
+        
+        // Edit mode toggle handler
+        editModeCheckbox.addValueChangeListener(e -> {
+            boolean editMode = e.getValue();
+            nameField.setReadOnly(!editMode);
+            descField.setReadOnly(!editMode);
+            tagsField.setReadOnly(!editMode);
+            keywordsField.setReadOnly(!editMode);
+            ownerField.setVisible(!editMode);
+            ownerCombo.setVisible(editMode);
+            authorsCombo.setVisible(editMode);
+        });
         
         // Content list
         H3 contentTitle = new H3("Content Objects");
@@ -859,6 +915,29 @@ public class FolderView extends VerticalLayout {
             try {
                 reloadedDoc.setName(nameField.getValue());
                 reloadedDoc.setDescription(descField.getValue());
+                reloadedDoc.setKeywords(keywordsField.getValue());
+                
+                // Parse and set tags
+                String tagsValue = tagsField.getValue();
+                if (tagsValue != null && !tagsValue.trim().isEmpty()) {
+                    Set<String> tags = Arrays.stream(tagsValue.split(","))
+                        .map(String::trim)
+                        .filter(tag -> !tag.isEmpty())
+                        .collect(Collectors.toSet());
+                    reloadedDoc.setTags(tags);
+                } else {
+                    reloadedDoc.setTags(new HashSet<>());
+                }
+                
+                // Set owner and authors if in edit mode
+                if (editModeCheckbox.getValue()) {
+                    reloadedDoc.setOwner(ownerCombo.getValue());
+                    reloadedDoc.getAuthors().clear();
+                    if (authorsCombo.getValue() != null) {
+                        reloadedDoc.getAuthors().addAll(authorsCombo.getValue());
+                    }
+                }
+                
                 documentService.save(reloadedDoc);
                 
                 Notification.show("Document updated", 3000, Notification.Position.BOTTOM_START)
@@ -873,13 +952,19 @@ public class FolderView extends VerticalLayout {
             }
         });
         saveButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        saveButton.setVisible(false); // Hidden until edit mode enabled
+        
+        // Show/hide save button based on edit mode
+        editModeCheckbox.addValueChangeListener(e -> {
+            saveButton.setVisible(e.getValue());
+        });
         
         HorizontalLayout buttons = new HorizontalLayout(closeButton, saveButton);
         buttons.setJustifyContentMode(FlexComponent.JustifyContentMode.END);
         buttons.setWidthFull();
         
         VerticalLayout layout = new VerticalLayout(
-            title, new Hr(), 
+            title, editModeCheckbox, new Hr(), 
             formLayout,
             contentTitle,
             contentGrid,

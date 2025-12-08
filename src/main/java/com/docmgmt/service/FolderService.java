@@ -307,4 +307,50 @@ public class FolderService extends AbstractSysObjectService<Folder, FolderReposi
         }
         return folder;
     }
+    
+    /**
+     * Find folder by ID with all UI-needed relationships eagerly loaded
+     * This method ensures owner, authors, and all collections are initialized
+     * to prevent LazyInitializationException in the UI layer
+     * @param id The folder ID
+     * @return The folder with all relationships initialized
+     */
+    @Transactional(readOnly = true)
+    public Folder findByIdWithRelationships(Long id) {
+        Folder folder = findById(id);
+        
+        // Initialize owner
+        if (folder.getOwner() != null) {
+            folder.getOwner().getUsername();
+        }
+        
+        // Initialize all child folders and their owners
+        if (folder.getChildFolders() != null) {
+            for (Folder child : folder.getChildFolders()) {
+                if (child.getOwner() != null) {
+                    child.getOwner().getUsername();
+                }
+            }
+        }
+        
+        // Initialize all items (documents) and their owners/authors
+        if (folder.getItems() != null) {
+            for (SysObject item : folder.getItems()) {
+                if (item.getOwner() != null) {
+                    item.getOwner().getUsername();
+                }
+                if (item instanceof com.docmgmt.model.Document) {
+                    com.docmgmt.model.Document doc = (com.docmgmt.model.Document) item;
+                    if (doc.getAuthors() != null) {
+                        doc.getAuthors().size();
+                        for (com.docmgmt.model.User author : doc.getAuthors()) {
+                            author.getUsername();
+                        }
+                    }
+                }
+            }
+        }
+        
+        return folder;
+    }
 }
