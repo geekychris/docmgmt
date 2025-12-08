@@ -142,5 +142,33 @@ public class DocumentService extends AbstractSysObjectService<Document, Document
     public Optional<Document> findLatestVersionByTypeAndName(Document.DocumentType documentType, String name) {
         return repository.findByDocumentTypeAndNameOrderByMajorVersionDescMinorVersionDesc(documentType, name);
     }
+    
+    /**
+     * Override findAllVersionsInHierarchy to ensure all entities are properly initialized
+     * This prevents Hibernate proxy casting issues in the UI
+     * @param id The ID of any version in the hierarchy
+     * @return List of all versions in the hierarchy with initialized proxies
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<Document> findAllVersionsInHierarchy(Long id) {
+        // Get all versions - this may return SysObject proxies due to parent relationship
+        @SuppressWarnings("unchecked")
+        List<com.docmgmt.model.SysObject> allVersions = (List<com.docmgmt.model.SysObject>) (List<?>) super.findAllVersionsInHierarchy(id);
+        
+        // Extract IDs without casting (works for both SysObject and Document)
+        List<Long> ids = allVersions.stream()
+            .map(com.docmgmt.model.SysObject::getId)
+            .collect(java.util.stream.Collectors.toList());
+        
+        // Reload each document by ID to get fully initialized Document instances
+        List<Document> initializedVersions = new java.util.ArrayList<>();
+        for (Long docId : ids) {
+            Document fullyInitialized = findById(docId);
+            initializedVersions.add(fullyInitialized);
+        }
+        
+        return initializedVersions;
+    }
 }
 

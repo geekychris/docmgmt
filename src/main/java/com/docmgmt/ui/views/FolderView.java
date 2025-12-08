@@ -4,6 +4,7 @@ import com.docmgmt.model.*;
 import com.docmgmt.model.Document.DocumentType;
 import com.docmgmt.service.ContentService;
 import com.docmgmt.service.DocumentService;
+import com.docmgmt.service.FileStoreService;
 import com.docmgmt.service.FolderService;
 import com.docmgmt.service.UserService;
 import com.docmgmt.ui.MainLayout;
@@ -30,11 +31,19 @@ import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.treegrid.TreeGrid;
 import com.vaadin.flow.component.combobox.MultiSelectComboBox;
+import com.vaadin.flow.component.radiobutton.RadioButtonGroup;
+import com.vaadin.flow.component.upload.Upload;
+import com.vaadin.flow.component.upload.receivers.MemoryBuffer;
 import com.vaadin.flow.data.provider.hierarchy.AbstractBackEndHierarchicalDataProvider;
 import com.vaadin.flow.data.provider.hierarchy.HierarchicalQuery;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.InputStream;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -50,6 +59,7 @@ public class FolderView extends VerticalLayout {
     private final DocumentService documentService;
     private final UserService userService;
     private final ContentService contentService;
+    private final FileStoreService fileStoreService;
     
     private TreeGrid<Folder> folderTree;
     private Grid<SysObject> itemsGrid;
@@ -68,11 +78,13 @@ public class FolderView extends VerticalLayout {
     private H3 currentFolderLabel;
     
     @Autowired
-    public FolderView(FolderService folderService, DocumentService documentService, UserService userService, ContentService contentService) {
+    public FolderView(FolderService folderService, DocumentService documentService, UserService userService, 
+                     ContentService contentService, FileStoreService fileStoreService) {
         this.folderService = folderService;
         this.documentService = documentService;
         this.userService = userService;
         this.contentService = contentService;
+        this.fileStoreService = fileStoreService;
         
         addClassName("folder-view");
         setSizeFull();
@@ -788,6 +800,23 @@ public class FolderView extends VerticalLayout {
         
         H2 title = new H2("Document: " + reloadedDoc.getName());
         
+        // Version picker - finds all versions in hierarchy regardless of name changes
+        ComboBox<Document> versionPicker = new ComboBox<>("Version");
+        List<Document> allVersions = documentService.findAllVersionsInHierarchy(reloadedDoc.getId());
+        versionPicker.setItems(allVersions);
+        versionPicker.setItemLabelGenerator(doc -> 
+            "v" + doc.getMajorVersion() + "." + doc.getMinorVersion() + 
+            " - " + doc.getName() +
+            (doc.getId().equals(reloadedDoc.getId()) ? " (current)" : ""));
+        versionPicker.setValue(reloadedDoc);
+        versionPicker.setWidthFull();
+        versionPicker.addValueChangeListener(e -> {
+            if (e.getValue() != null && !e.getValue().getId().equals(reloadedDoc.getId())) {
+                dialog.close();
+                openDocumentDetailDialog(e.getValue());
+            }
+        });
+        
         // Edit mode toggle
         Checkbox editModeCheckbox = new Checkbox("Edit Mode");
         editModeCheckbox.setValue(false);
@@ -894,7 +923,7 @@ public class FolderView extends VerticalLayout {
             contentGrid.setItems(reloadedDoc.getContents());
         }
         
-        // View content button
+        // Content action buttons
         Button viewContentButton = new Button("View Content", new Icon(VaadinIcon.EYE));
         viewContentButton.setEnabled(false);
         viewContentButton.addClickListener(e -> {
@@ -903,11 +932,85 @@ public class FolderView extends VerticalLayout {
             });
         });
         
-        contentGrid.addSelectionListener(event -> {
-            viewContentButton.setEnabled(event.getFirstSelectedItem().isPresent());
+        Button uploadContentButton = new Button("Upload Content", new Icon(VaadinIcon.UPLOAD));
+        uploadContentButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        uploadContentButton.addClickListener(e -> {
+            dialog.close();
+            openUploadContentDialogForFolder(reloadedDoc, dialog);
         });
         
-        HorizontalLayout contentToolbar = new HorizontalLayout(viewContentButton);
+        Button transformContentButton = new Button("Transform PDF", new Icon(VaadinIcon.MAGIC));
+        transformContentButton.setEnabled(false);
+        transformContentButton.addThemeVariants(ButtonVariant.LUMO_SUCCESS);
+        transformContentButton.addClickListener(e -> {
+            contentGrid.asSingleSelect().getOptionalValue().ifPresent(content -> {
+                if (content.isPrimary() && "application/pdf".equals(content.getContentType())) {
+                    try {
+                        contentService.transformAndAddRendition(content.getId(), "text/plain");
+                        Notification.show("PDF transformed to text", 3000, Notification.Position.BOTTOM_START)
+                            .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                        // Refresh content grid
+                        Document refreshedDoc = documentService.findById(reloadedDoc.getId());
+                        if (refreshedDoc.getContents() != null) {
+                            refreshedDoc.getContents().size();
+                        }
+                        contentGrid.setItems(refreshedDoc.getContents());
+                    } catch (Exception ex) {
+                        Notification.show("Transform failed: " + ex.getMessage(), 
+                            3000, Notification.Position.BOTTOM_START)
+                            .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                    }
+                }
+            });
+        });
+        
+        contentGrid.addSelectionListener(event -> {
+            boolean hasSelection = event.getFirstSelectedItem().isPresent();
+            viewContentButton.setEnabled(hasSelection);
+            
+            // Enable transform only for primary PDF content
+            transformContentButton.setEnabled(hasSelection && 
+                event.getFirstSelectedItem()
+                    .filter(c -> c.isPrimary() && "application/pdf".equals(c.getContentType()))
+                    .isPresent());
+        });
+        
+        HorizontalLayout contentToolbar = new HorizontalLayout(
+            viewContentButton, uploadContentButton, transformContentButton);
+        
+        // Version control buttons
+        Button createMajorVersionButton = new Button("Create Major Version", new Icon(VaadinIcon.PLUS_CIRCLE));
+        createMajorVersionButton.addClickListener(e -> {
+            try {
+                documentService.createMajorVersion(reloadedDoc.getId());
+                Notification.show("Major version created", 3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                refreshFolderContents();
+                dialog.close();
+            } catch (Exception ex) {
+                Notification.show("Failed to create version: " + ex.getMessage(), 
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            }
+        });
+        
+        Button createMinorVersionButton = new Button("Create Minor Version", new Icon(VaadinIcon.PLUS_CIRCLE_O));
+        createMinorVersionButton.addClickListener(e -> {
+            try {
+                documentService.createMinorVersion(reloadedDoc.getId());
+                Notification.show("Minor version created", 3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                refreshFolderContents();
+                dialog.close();
+            } catch (Exception ex) {
+                Notification.show("Failed to create version: " + ex.getMessage(), 
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            }
+        });
+        
+        HorizontalLayout versionButtons = new HorizontalLayout(createMajorVersionButton, createMinorVersionButton);
+        versionButtons.setSpacing(true);
         
         // Dialog buttons
         Button closeButton = new Button("Close", e -> dialog.close());
@@ -964,11 +1067,13 @@ public class FolderView extends VerticalLayout {
         buttons.setWidthFull();
         
         VerticalLayout layout = new VerticalLayout(
-            title, editModeCheckbox, new Hr(), 
+            title, versionPicker, editModeCheckbox, new Hr(), 
             formLayout,
             contentTitle,
             contentGrid,
             contentToolbar,
+            new Hr(),
+            versionButtons,
             buttons
         );
         layout.setPadding(true);
@@ -1284,6 +1389,169 @@ public class FolderView extends VerticalLayout {
                 transformFolderRecursive(childFolder, counts);
             }
         }
+    }
+    
+    /**
+     * Open upload content dialog for a document from folder view
+     */
+    private void openUploadContentDialogForFolder(Document document, Dialog parentDialog) {
+        Dialog uploadDialog = new Dialog();
+        uploadDialog.setWidth("500px");
+        
+        H2 title = new H2("Upload Content");
+        
+        Span docInfo = new Span("Document: " + document.getName() + " (v" + 
+                               document.getMajorVersion() + "." + document.getMinorVersion() + ")");
+        docInfo.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        
+        // Storage type selection
+        RadioButtonGroup<String> storageType = new RadioButtonGroup<>();
+        storageType.setLabel("Storage Type");
+        storageType.setItems("Database", "File Store");
+        storageType.setValue("Database");
+        
+        // File store selection (initially hidden)
+        ComboBox<FileStore> fileStoreCombo = new ComboBox<>("File Store");
+        fileStoreCombo.setItems(fileStoreService.findAll());
+        fileStoreCombo.setItemLabelGenerator(FileStore::getName);
+        fileStoreCombo.setVisible(false);
+        
+        storageType.addValueChangeListener(e -> {
+            boolean isFileStore = "File Store".equals(e.getValue());
+            fileStoreCombo.setVisible(isFileStore);
+            if (isFileStore && fileStoreCombo.getValue() == null) {
+                fileStoreCombo.getListDataView().getItems().findFirst().ifPresent(fileStoreCombo::setValue);
+            }
+        });
+        
+        // File upload component
+        MemoryBuffer buffer = new MemoryBuffer();
+        Upload upload = new Upload(buffer);
+        upload.setMaxFiles(1);
+        upload.setAcceptedFileTypes(
+            "application/pdf", ".pdf",
+            "text/plain", ".txt",
+            "application/msword", ".doc",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx",
+            "image/*"
+        );
+        
+        Span uploadStatus = new Span();
+        uploadStatus.setVisible(false);
+        
+        upload.addSucceededListener(event -> {
+            uploadStatus.setText("File uploaded: " + event.getFileName());
+            uploadStatus.getStyle().set("color", "var(--lumo-success-color)");
+            uploadStatus.setVisible(true);
+        });
+        
+        upload.addFileRejectedListener(event -> {
+            uploadStatus.setText("File rejected: " + event.getErrorMessage());
+            uploadStatus.getStyle().set("color", "var(--lumo-error-color)");
+            uploadStatus.setVisible(true);
+        });
+        
+        // Buttons
+        Button cancelButton = new Button("Cancel", e -> {
+            uploadDialog.close();
+            parentDialog.open();
+        });
+        
+        Button saveButton = new Button("Upload", e -> {
+            try {
+                if (buffer.getInputStream().available() == 0) {
+                    Notification.show("Please select a file to upload", 
+                        3000, Notification.Position.BOTTOM_START)
+                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                    return;
+                }
+                
+                // Create a custom MultipartFile from the buffer
+                byte[] fileBytes = buffer.getInputStream().readAllBytes();
+                String fileName = buffer.getFileName();
+                String contentType = buffer.getFileData().getMimeType();
+                
+                MultipartFile multipartFile = new MultipartFile() {
+                    @Override
+                    public String getName() { return fileName; }
+                    
+                    @Override
+                    public String getOriginalFilename() { return fileName; }
+                    
+                    @Override
+                    public String getContentType() { return contentType; }
+                    
+                    @Override
+                    public boolean isEmpty() { return fileBytes.length == 0; }
+                    
+                    @Override
+                    public long getSize() { return fileBytes.length; }
+                    
+                    @Override
+                    public byte[] getBytes() { return fileBytes; }
+                    
+                    @Override
+                    public InputStream getInputStream() { 
+                        return new ByteArrayInputStream(fileBytes); 
+                    }
+                    
+                    @Override
+                    public void transferTo(File dest) throws IllegalStateException {
+                        throw new UnsupportedOperationException();
+                    }
+                };
+                
+                Content content;
+                if ("Database".equals(storageType.getValue())) {
+                    content = contentService.createContentInDatabase(multipartFile, document);
+                } else {
+                    if (fileStoreCombo.getValue() == null) {
+                        Notification.show("Please select a file store", 
+                            3000, Notification.Position.BOTTOM_START)
+                            .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                        return;
+                    }
+                    content = contentService.createContentInFileStore(
+                        multipartFile, document, fileStoreCombo.getValue().getId()
+                    );
+                }
+                
+                Notification.show("Content uploaded successfully", 
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                uploadDialog.close();
+                refreshFolderContents();
+                // Reopen parent dialog to show updated content
+                parentDialog.open();
+                
+            } catch (Exception ex) {
+                Notification.show("Failed to upload content: " + ex.getMessage(), 
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            }
+        });
+        saveButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        
+        // Layout
+        FormLayout formLayout = new FormLayout();
+        formLayout.add(docInfo, storageType, fileStoreCombo, upload, uploadStatus);
+        formLayout.setColspan(docInfo, 2);
+        formLayout.setColspan(upload, 2);
+        formLayout.setColspan(uploadStatus, 2);
+        
+        HorizontalLayout buttonLayout = new HorizontalLayout(cancelButton, saveButton);
+        buttonLayout.setJustifyContentMode(FlexComponent.JustifyContentMode.END);
+        buttonLayout.setWidthFull();
+        buttonLayout.setPadding(true);
+        
+        VerticalLayout dialogLayout = new VerticalLayout(
+            title, new Hr(), formLayout, buttonLayout
+        );
+        dialogLayout.setPadding(false);
+        dialogLayout.setSpacing(false);
+        
+        uploadDialog.add(dialogLayout);
+        uploadDialog.open();
     }
     
     /**

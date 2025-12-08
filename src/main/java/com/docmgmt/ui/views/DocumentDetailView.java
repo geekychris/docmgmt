@@ -98,6 +98,23 @@ public class DocumentDetailView extends VerticalLayout implements HasUrlParamete
         Button backToDocumentsButton = new Button("Back to Documents", new Icon(VaadinIcon.ARROW_LEFT));
         backToDocumentsButton.addClickListener(e -> UI.getCurrent().navigate(""));
         
+        // Version picker - finds all versions in hierarchy regardless of name changes
+        ComboBox<Document> versionPicker = new ComboBox<>("Version");
+        List<Document> allVersions = documentService.findAllVersionsInHierarchy(currentDocument.getId());
+        versionPicker.setItems(allVersions);
+        versionPicker.setItemLabelGenerator(doc -> 
+            "v" + doc.getMajorVersion() + "." + doc.getMinorVersion() + 
+            " - " + doc.getName() +
+            (doc.getId().equals(currentDocument.getId()) ? " (current)" : ""));
+        versionPicker.setValue(currentDocument);
+        versionPicker.setWidth("400px");
+        versionPicker.addValueChangeListener(e -> {
+            if (e.getValue() != null && !e.getValue().getId().equals(currentDocument.getId())) {
+                // Navigate to the selected version
+                UI.getCurrent().navigate("document/" + e.getValue().getId());
+            }
+        });
+        
         // Edit mode toggle
         editModeCheckbox = new Checkbox("Edit Mode");
         editModeCheckbox.setValue(editMode);
@@ -106,7 +123,7 @@ public class DocumentDetailView extends VerticalLayout implements HasUrlParamete
             refreshDocumentInfo();
         });
         
-        HorizontalLayout headerButtons = new HorizontalLayout(backButton, backToDocumentsButton, editModeCheckbox);
+        HorizontalLayout headerButtons = new HorizontalLayout(backButton, backToDocumentsButton, versionPicker, editModeCheckbox);
         headerButtons.setSpacing(true);
         headerButtons.setAlignItems(FlexComponent.Alignment.CENTER);
         

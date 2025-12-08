@@ -215,5 +215,68 @@ public abstract class AbstractSysObjectService<T extends SysObject, R extends Ba
         
         return history;
     }
+    
+    /**
+     * Find the root version (the version with no parent) of a SysObject
+     * @param id The ID of the SysObject
+     * @return The root version
+     */
+    @Transactional(readOnly = true)
+    public T findRootVersion(Long id) {
+        T current = findById(id);
+        
+        while (current.getParentVersion() != null) {
+            @SuppressWarnings("unchecked")
+            T parent = (T) current.getParentVersion();
+            current = parent;
+        }
+        
+        return current;
+    }
+    
+    /**
+     * Find all versions in the same version hierarchy as the given SysObject
+     * This finds the root version and then collects all descendants recursively
+     * This is name-independent and relies purely on the parent-child version relationships
+     * @param id The ID of any version in the hierarchy
+     * @return List of all versions in the hierarchy, sorted by version number (newest first)
+     */
+    @Transactional(readOnly = true)
+    public List<T> findAllVersionsInHierarchy(Long id) {
+        // Find the root version
+        T root = findRootVersion(id);
+        
+        // Collect all versions starting from root
+        List<T> allVersions = new java.util.ArrayList<>();
+        collectAllDescendants(root, allVersions);
+        
+        // Sort by major version desc, then minor version desc
+        allVersions.sort((a, b) -> {
+            int majorCompare = Integer.compare(b.getMajorVersion(), a.getMajorVersion());
+            if (majorCompare != 0) {
+                return majorCompare;
+            }
+            return Integer.compare(b.getMinorVersion(), a.getMinorVersion());
+        });
+        
+        return allVersions;
+    }
+    
+    /**
+     * Recursively collect all descendants of a version
+     * @param version The current version
+     * @param allVersions The list to accumulate all versions
+     */
+    private void collectAllDescendants(T version, List<T> allVersions) {
+        allVersions.add(version);
+        
+        // Get all direct children of this version
+        List<T> children = repository.findByParentVersionId(version.getId());
+        
+        // Recursively collect descendants of each child
+        for (T child : children) {
+            collectAllDescendants(child, allVersions);
+        }
+    }
 }
 
