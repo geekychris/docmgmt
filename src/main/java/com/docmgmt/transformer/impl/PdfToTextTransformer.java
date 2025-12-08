@@ -17,7 +17,8 @@ import java.nio.charset.StandardCharsets;
  * Uses Apache PDFBox to extract text content from PDF files.
  */
 @Component
-public class PdfToTextTransformer extends AbstractContentTransformer {
+public class
+PdfToTextTransformer extends AbstractContentTransformer {
     
     private static final String SOURCE_TYPE = "application/pdf";
     private static final String TARGET_TYPE = "text/plain";
@@ -45,7 +46,9 @@ public class PdfToTextTransformer extends AbstractContentTransformer {
             String text = stripper.getText(document);
             
             if (text == null || text.trim().isEmpty()) {
-                throw new TransformationException("No text content could be extracted from PDF");
+                // Some PDFs are image-based or have no extractable text
+                // Return empty string rather than failing completely
+                return "[No extractable text content found - PDF may be image-based]".getBytes(StandardCharsets.UTF_8);
             }
             
             return text.getBytes(StandardCharsets.UTF_8);

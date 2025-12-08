@@ -22,7 +22,10 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
      * @param sysObject The SysObject
      * @return List of Content objects
      */
-    @Query("SELECT c FROM Content c LEFT JOIN FETCH c.fileStore WHERE c.sysObject = :sysObject")
+    @Query("SELECT c FROM Content c " +
+           "LEFT JOIN FETCH c.fileStore " +
+           "LEFT JOIN FETCH c.secondaryRenditions " +
+           "WHERE c.sysObject = :sysObject")
     List<Content> findBySysObject(@Param("sysObject") SysObject sysObject);
 
     /**
@@ -61,7 +64,11 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
      * @param id The content ID
      * @return Optional containing the Content if found
      */
-    @Query("SELECT c FROM Content c LEFT JOIN FETCH c.fileStore LEFT JOIN FETCH c.sysObject WHERE c.id = :id")
+    @Query("SELECT c FROM Content c " +
+           "LEFT JOIN FETCH c.fileStore " +
+           "LEFT JOIN FETCH c.sysObject " +
+           "LEFT JOIN FETCH c.secondaryRenditions " +
+           "WHERE c.id = :id")
     Optional<Content> findByIdWithAssociations(@Param("id") Long id);
     
     /**

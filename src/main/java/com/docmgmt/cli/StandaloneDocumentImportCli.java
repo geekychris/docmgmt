@@ -44,14 +44,19 @@ public class StandaloneDocumentImportCli {
     // Configuration properties
     private String apiBaseUrl = "http://localhost:8082/docmgmt";
     private String rootDir;
+    private String rootFolderName;
     private Set<String> fileTypes;
     private Long fileStoreId;
     private boolean createFolders = true;
+    private boolean transformPdfs = false;
+    private boolean triggerIndex = false;
+    private FolderDTO rootFolder;
     
     // Statistics
     private final AtomicInteger foldersCreated = new AtomicInteger(0);
     private final AtomicInteger documentsCreated = new AtomicInteger(0);
     private final AtomicInteger filesUploaded = new AtomicInteger(0);
+    private final AtomicInteger transformations = new AtomicInteger(0);
     private final AtomicInteger errors = new AtomicInteger(0);
     
     public StandaloneDocumentImportCli() {
@@ -117,6 +122,12 @@ public class StandaloneDocumentImportCli {
             throw new IllegalArgumentException("Missing required argument: --root-dir");
         }
         
+        // Root folder name (optional, defaults to directory name)
+        rootFolderName = argMap.get("root-folder-name");
+        if (rootFolderName == null) {
+            rootFolderName = Paths.get(rootDir).getFileName().toString();
+        }
+        
         // File types
         String fileTypesStr = argMap.getOrDefault("file-types", "pdf,docx,txt,doc,rtf,md");
         fileTypes = new HashSet<>(Arrays.asList(fileTypesStr.toLowerCase().split(",")));
@@ -129,6 +140,8 @@ public class StandaloneDocumentImportCli {
         
         // Optional flags
         createFolders = Boolean.parseBoolean(argMap.getOrDefault("create-folders", "true"));
+        transformPdfs = Boolean.parseBoolean(argMap.getOrDefault("transform", "false"));
+        triggerIndex = Boolean.parseBoolean(argMap.getOrDefault("index", "false"));
     }
     
     private void validateConfiguration() throws IOException {
@@ -178,15 +191,25 @@ public class StandaloneDocumentImportCli {
         logger.info("Configuration:");
         logger.info("  API Base URL: {}", apiBaseUrl);
         logger.info("  Root Directory: {}", rootDir);
+        logger.info("  Root Folder Name: {}", rootFolderName);
         logger.info("  File Types: {}", fileTypes);
         logger.info("  File Store ID: {}", fileStoreId != null ? fileStoreId : "N/A (database storage)");
         logger.info("  Create Folders: {}", createFolders);
+        logger.info("  Transform PDFs: {}", transformPdfs);
+        logger.info("  Trigger Indexing: {}", triggerIndex);
         logger.info("");
     }
     
     private void performImport() throws IOException {
         logger.info("Starting import from: {}", rootDir);
         logger.info("");
+        
+        // Create root folder for import
+        if (createFolders) {
+            rootFolder = createRootFolder();
+            logger.info("Created root folder '{}' with ID: {}", rootFolder.getName(), rootFolder.getId());
+            logger.info("");
+        }
         
         Path root = Paths.get(rootDir);
         Map<Path, FolderDTO> folderCache = new HashMap<>();
@@ -235,12 +258,51 @@ public class StandaloneDocumentImportCli {
         ContentDTO primaryContent = uploadContent(filePath, document);
         filesUploaded.incrementAndGet();
         
+        // Transform PDF to text if requested
+        if (transformPdfs && primaryContent != null && "application/pdf".equals(primaryContent.getContentType())) {
+            try {
+                transformToText(primaryContent.getId());
+                transformations.incrementAndGet();
+                logger.info("  ✓ Transformed to text");
+            } catch (Exception e) {
+                logger.warn("  Could not transform PDF: {}", e.getMessage());
+            }
+        }
+        
         logger.info("  ✓ Created document ID: {}", document.getId());
+    }
+    
+    private FolderDTO createRootFolder() {
+        FolderDTO folderDTO = new FolderDTO();
+        folderDTO.setName(rootFolderName);
+        folderDTO.setPath("/" + rootFolderName);
+        folderDTO.setDescription("Imported from: " + rootDir);
+        folderDTO.setIsPublic(false);
+        
+        try {
+            String url = apiBaseUrl + "/api/folders";
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<FolderDTO> request = new HttpEntity<>(folderDTO, headers);
+            
+            ResponseEntity<FolderDTO> response = restTemplate.postForEntity(url, request, FolderDTO.class);
+            FolderDTO createdFolder = response.getBody();
+            
+            if (createdFolder != null) {
+                foldersCreated.incrementAndGet();
+                return createdFolder;
+            }
+        } catch (Exception e) {
+            logger.error("Failed to create root folder {}: {}", rootFolderName, e.getMessage());
+            throw new RuntimeException("Failed to create root folder", e);
+        }
+        
+        throw new RuntimeException("Failed to create root folder");
     }
     
     private FolderDTO getOrCreateFolder(Path relativePath, Path rootPath, Map<Path, FolderDTO> cache) {
         if (relativePath.getNameCount() == 0) {
-            return null; // Root level
+            return rootFolder; // Files at root level go into root folder
         }
         
         // Check cache
@@ -248,7 +310,7 @@ public class StandaloneDocumentImportCli {
             return cache.get(relativePath);
         }
         
-        String folderPath = "/" + relativePath.toString().replace(File.separator, "/");
+        String folderPath = "/" + rootFolderName + "/" + relativePath.toString().replace(File.separator, "/");
         
         // Try to find existing folder by path
         try {
@@ -267,10 +329,13 @@ public class StandaloneDocumentImportCli {
         }
         
         // Get or create parent folder
-        FolderDTO parentFolder = null;
+        FolderDTO parentFolder;
         if (relativePath.getNameCount() > 1) {
             Path parentPath = relativePath.getParent();
             parentFolder = getOrCreateFolder(parentPath, rootPath, cache);
+        } else {
+            // Parent is the root folder
+            parentFolder = rootFolder;
         }
         
         // Create this folder
@@ -404,6 +469,24 @@ public class StandaloneDocumentImportCli {
         };
     }
     
+    /**
+     * Transform PDF content to text
+     */
+    private void transformToText(Long contentId) {
+        try {
+            String url = UriComponentsBuilder.fromHttpUrl(apiBaseUrl + "/api/content/" + contentId + "/transform")
+                    .queryParam("targetContentType", "text/plain")
+                    .toUriString();
+            
+            ResponseEntity<ContentDTO> response = restTemplate.postForEntity(url, null, ContentDTO.class);
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                throw new RuntimeException("Transform returned: " + response.getStatusCode());
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to transform content", e);
+        }
+    }
+    
     private void displayStatistics() {
         logger.info("");
         logger.info("=".repeat(80));
@@ -412,6 +495,9 @@ public class StandaloneDocumentImportCli {
         logger.info("  Folders Created:     {}", foldersCreated.get());
         logger.info("  Documents Created:   {}", documentsCreated.get());
         logger.info("  Files Uploaded:      {}", filesUploaded.get());
+        if (transformPdfs) {
+            logger.info("  Transformations:     {}", transformations.get());
+        }
         logger.info("  Errors:              {}", errors.get());
         logger.info("=".repeat(80));
     }

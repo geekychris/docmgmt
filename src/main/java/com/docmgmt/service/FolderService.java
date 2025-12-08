@@ -140,6 +140,86 @@ public class FolderService extends AbstractSysObjectService<Folder, FolderReposi
     }
     
     /**
+     * Link multiple folders to a parent folder (or root if parentId is null)
+     * @param parentId The parent folder ID (null for root)
+     * @param folderIds The list of folder IDs to link
+     * @return The updated parent folder (or null if moving to root)
+     */
+    @Transactional
+    public Folder linkFoldersToParent(Long parentId, List<Long> folderIds) {
+        Folder parent = parentId != null ? findById(parentId) : null;
+        
+        for (Long folderId : folderIds) {
+            Folder folder = findById(folderId);
+            
+            // Prevent circular references
+            if (parent != null && wouldCreateCircularReference(folder, parent)) {
+                throw new IllegalArgumentException(
+                    "Cannot move folder '" + folder.getName() + "' - would create circular reference"
+                );
+            }
+            
+            // Unlink from current parent if any
+            if (folder.getParentFolder() != null) {
+                Folder oldParent = folder.getParentFolder();
+                oldParent.removeChildFolder(folder);
+                repository.save(oldParent);
+            }
+            
+            // Link to new parent
+            folder.setParentFolder(parent);
+            if (parent != null) {
+                parent.addChildFolder(folder);
+            }
+            repository.save(folder);
+        }
+        
+        return parent != null ? repository.save(parent) : null;
+    }
+    
+    /**
+     * Unlink multiple folders from their parent (move to root)
+     * @param folderIds The list of folder IDs to unlink
+     */
+    @Transactional
+    public void unlinkFoldersFromParent(List<Long> folderIds) {
+        for (Long folderId : folderIds) {
+            Folder folder = findById(folderId);
+            
+            if (folder.getParentFolder() != null) {
+                Folder parent = folder.getParentFolder();
+                parent.removeChildFolder(folder);
+                repository.save(parent);
+            }
+            
+            folder.setParentFolder(null);
+            repository.save(folder);
+        }
+    }
+    
+    /**
+     * Check if linking child to parent would create a circular reference
+     * @param child The folder to be made a child
+     * @param parent The prospective parent
+     * @return true if this would create a circular reference
+     */
+    private boolean wouldCreateCircularReference(Folder child, Folder parent) {
+        if (child.getId().equals(parent.getId())) {
+            return true;
+        }
+        
+        Folder current = parent.getParentFolder();
+        while (current != null) {
+            if (current.getId().equals(child.getId())) {
+                return true;
+            }
+            current = current.getParentFolder();
+        }
+        
+        return false;
+    }
+    
+    /**
      * Get all folders in the hierarchy starting from a root folder
      * @param rootId The root folder ID
      * @return List of all folders in the hierarchy

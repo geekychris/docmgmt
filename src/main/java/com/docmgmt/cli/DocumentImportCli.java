@@ -76,6 +76,7 @@ public class DocumentImportCli implements CommandLineRunner {
     private final AtomicInteger foldersCreated = new AtomicInteger(0);
     private final AtomicInteger documentsCreated = new AtomicInteger(0);
     private final AtomicInteger filesUploaded = new AtomicInteger(0);
+    private final AtomicInteger documentsLinkedToFolders = new AtomicInteger(0);
     private final AtomicInteger transformations = new AtomicInteger(0);
     private final AtomicInteger errors = new AtomicInteger(0);
     
@@ -359,8 +360,27 @@ public class DocumentImportCli implements CommandLineRunner {
             
             // Add document to folder if specified
             if (createdDocument != null && folder != null) {
-                String addItemUrl = apiBaseUrl + "/api/folders/" + folder.getId() + "/items/" + createdDocument.getId();
-                restTemplate.put(addItemUrl, null);
+                try {
+                    String addItemUrl = apiBaseUrl + "/api/folders/" + folder.getId() + "/items/" + createdDocument.getId();
+                    ResponseEntity<Void> linkResponse = restTemplate.exchange(
+                        addItemUrl,
+                        org.springframework.http.HttpMethod.PUT,
+                        null,
+                        Void.class
+                    );
+                    
+                    if (linkResponse.getStatusCode().is2xxSuccessful()) {
+                        logger.debug("  ✓ Linked document to folder: {}", folder.getName());
+                        documentsLinkedToFolders.incrementAndGet();
+                    } else {
+                        logger.warn("  ⚠ Failed to link document to folder (HTTP {})", linkResponse.getStatusCode());
+                        errors.incrementAndGet();
+                    }
+                } catch (Exception e) {
+                    logger.error("  ✗ Error linking document to folder {}: {}", folder.getName(), e.getMessage());
+                    errors.incrementAndGet();
+                    // Don't fail the entire import, just log the error
+                }
             }
             
             return createdDocument;
@@ -462,12 +482,23 @@ public class DocumentImportCli implements CommandLineRunner {
         logger.info("=".repeat(80));
         logger.info("Import Statistics");
         logger.info("=".repeat(80));
-        logger.info("  Folders Created:     {}", foldersCreated.get());
-        logger.info("  Documents Created:   {}", documentsCreated.get());
-        logger.info("  Files Uploaded:      {}", filesUploaded.get());
-        logger.info("  Transformations:     {}", transformations.get());
-        logger.info("  Errors:              {}", errors.get());
+        logger.info("  Folders Created:        {}", foldersCreated.get());
+        logger.info("  Documents Created:      {}", documentsCreated.get());
+        logger.info("  Documents Linked:       {}", documentsLinkedToFolders.get());
+        logger.info("  Files Uploaded:         {}", filesUploaded.get());
+        logger.info("  Transformations:        {}", transformations.get());
+        logger.info("  Errors:                 {}", errors.get());
         logger.info("=".repeat(80));
+        
+        // Warning if documents were created but not linked
+        if (documentsCreated.get() > 0 && documentsLinkedToFolders.get() < documentsCreated.get()) {
+            int orphaned = documentsCreated.get() - documentsLinkedToFolders.get();
+            logger.warn("");
+            logger.warn("WARNING: {} document(s) were created but NOT linked to folders!", orphaned);
+            logger.warn("This means they exist in the system but won't appear in the folder hierarchy.");
+            logger.warn("Check the logs above for 'Error linking document to folder' messages.");
+            logger.warn("");
+        }
     }
     
 }

@@ -31,12 +31,28 @@ public class ContentDTO {
     private LocalDateTime createdAt;
     private LocalDateTime modifiedAt;
     
+    // Rendition fields
+    private boolean isPrimary;
+    private boolean isIndexable;
+    private Long parentRenditionId;
+    private java.util.List<ContentDTO> secondaryRenditions;
+    
     /**
      * Convert from entity to DTO
      * @param content the entity
      * @return the DTO
      */
     public static ContentDTO fromEntity(Content content) {
+        return fromEntity(content, false);
+    }
+    
+    /**
+     * Convert from entity to DTO
+     * @param content the entity
+     * @param includeSecondaryRenditions whether to include secondary renditions recursively
+     * @return the DTO
+     */
+    public static ContentDTO fromEntity(Content content, boolean includeSecondaryRenditions) {
         try {
             ContentDTO dto = ContentDTO.builder()
                     .id(content.getId())
@@ -47,6 +63,8 @@ public class ContentDTO {
                     .modifiedAt(content.getModifiedAt())
                     .size(content.getSize())
                     .formattedSize(SpaceInfoDTO.formatBytes(content.getSize()))
+                    .isPrimary(content.isPrimary())
+                    .isIndexable(content.isIndexable())
                     .build();
             
             if (content.isStoredInDatabase()) {
@@ -56,6 +74,21 @@ public class ContentDTO {
                 dto.setFileStoreId(content.getFileStore().getId());
                 dto.setFileStoreName(content.getFileStore().getName());
                 dto.setStoragePath(content.getStoragePath());
+            }
+            
+            // Add parent rendition ID if this is a secondary rendition
+            if (content.getParentRendition() != null) {
+                dto.setParentRenditionId(content.getParentRendition().getId());
+            }
+            
+            // Add secondary renditions if requested
+            if (includeSecondaryRenditions && content.isPrimary() && 
+                content.getSecondaryRenditions() != null && !content.getSecondaryRenditions().isEmpty()) {
+                dto.setSecondaryRenditions(
+                    content.getSecondaryRenditions().stream()
+                        .map(sec -> ContentDTO.fromEntity(sec, false))
+                        .collect(java.util.stream.Collectors.toList())
+                );
             }
             
             return dto;

@@ -50,6 +50,33 @@ public class FolderController extends AbstractSysObjectController<Folder, Folder
         return dto.toEntity();
     }
     
+    @Override
+    public ResponseEntity<FolderDTO> create(FolderDTO dto) {
+        try {
+            // Convert DTO to entity
+            Folder folder = toEntity(dto);
+            
+            // Handle parent folder relationship if specified
+            if (dto.getParentFolderId() != null) {
+                Folder parentFolder = service.findById(dto.getParentFolderId());
+                folder.setParentFolder(parentFolder);
+            }
+            
+            // Save the folder
+            Folder savedFolder = service.save(folder);
+            
+            // If there's a parent, add this folder as a child
+            if (savedFolder.getParentFolder() != null) {
+                service.addChildFolder(savedFolder.getParentFolder().getId(), savedFolder);
+            }
+            
+            return ResponseEntity.status(HttpStatus.CREATED).body(toDTO(savedFolder));
+        } catch (Exception e) {
+            logger.error("Error creating folder", e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error creating folder", e);
+        }
+    }
+    
     /**
      * Find folders by path
      * @param path The folder path
@@ -264,6 +291,84 @@ public class FolderController extends AbstractSysObjectController<Folder, Folder
         } catch (Exception e) {
             logger.error("Error removing item {} from folder {}", itemId, folderId, e);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error removing item from folder", e);
+        }
+    }
+    
+    /**
+     * Link multiple folders to a parent folder (batch operation)
+     * @param parentId The parent folder ID (null to move to root)
+     * @param folderIds The list of folder IDs to link
+     * @return The updated parent folder DTO or null if moved to root
+     */
+    @Operation(
+        summary = "Link multiple folders to parent",
+        description = "Link multiple folders to a parent folder in a batch operation. Pass null for parentId to move folders to root level."
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Folders linked successfully"),
+        @ApiResponse(responseCode = "404", description = "Parent folder or one of the folders not found"),
+        @ApiResponse(responseCode = "400", description = "Invalid operation (e.g., circular reference)"),
+        @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
+    @PutMapping("/batch/link")
+    public ResponseEntity<FolderDTO> linkFoldersToParent(
+            @Parameter(description = "Parent folder ID (null for root level)", required = false)
+            @RequestParam(required = false) Long parentId,
+            @Parameter(description = "List of folder IDs to link to parent", required = true)
+            @RequestBody List<Long> folderIds) {
+        try {
+            if (folderIds == null || folderIds.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Folder IDs list cannot be empty");
+            }
+            
+            Folder parent = service.linkFoldersToParent(parentId, folderIds);
+            
+            if (parent != null) {
+                return ResponseEntity.ok(toDTO(parent));
+            } else {
+                // Moved to root - return null or empty response
+                return ResponseEntity.ok().build();
+            }
+        } catch (EntityNotFoundException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
+        } catch (Exception e) {
+            logger.error("Error linking folders to parent {}", parentId, e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error linking folders", e);
+        }
+    }
+    
+    /**
+     * Unlink multiple folders from their parent (batch operation)
+     * @param folderIds The list of folder IDs to unlink
+     * @return Success response
+     */
+    @Operation(
+        summary = "Unlink multiple folders from parent",
+        description = "Unlink multiple folders from their parent, moving them to root level"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Folders unlinked successfully"),
+        @ApiResponse(responseCode = "404", description = "One of the folders not found"),
+        @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
+    @DeleteMapping("/batch/unlink")
+    public ResponseEntity<Void> unlinkFoldersFromParent(
+            @Parameter(description = "List of folder IDs to unlink from parent", required = true)
+            @RequestBody List<Long> folderIds) {
+        try {
+            if (folderIds == null || folderIds.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Folder IDs list cannot be empty");
+            }
+            
+            service.unlinkFoldersFromParent(folderIds);
+            return ResponseEntity.ok().build();
+        } catch (EntityNotFoundException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
+        } catch (Exception e) {
+            logger.error("Error unlinking folders", e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error unlinking folders", e);
         }
     }
 }

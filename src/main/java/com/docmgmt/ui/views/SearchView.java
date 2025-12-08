@@ -162,16 +162,15 @@ public class SearchView extends VerticalLayout {
         resultsGrid.addColumn(result -> String.format("%.2f", result.getScore()))
             .setHeader("Score").setAutoWidth(true);
         
-        // Add action column to open document
-        resultsGrid.addComponentColumn(result -> {
-            Button openButton = new Button(new Icon(VaadinIcon.EXTERNAL_LINK));
-            openButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
-            openButton.addClickListener(e -> openDocument(result.getDocumentId()));
-            openButton.getElement().setAttribute("title", "Open document");
-            return openButton;
-        }).setHeader("Actions").setAutoWidth(true);
-        
         resultsGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COMPACT);
+        
+        // Make rows clickable to navigate to document details
+        resultsGrid.addItemClickListener(event -> {
+            SearchResult result = event.getItem();
+            if (result != null && result.getDocumentId() != null) {
+                openDocument(result.getDocumentId());
+            }
+        });
         
         panel.add(resultsCount, resultsGrid);
         panel.expand(resultsGrid);
@@ -274,9 +273,7 @@ public class SearchView extends VerticalLayout {
     
     private void openDocument(Long documentId) {
         getUI().ifPresent(ui -> {
-            ui.navigate("");  // Navigate to main document view
-            Notification.show("Opening document ID: " + documentId, 
-                2000, Notification.Position.BOTTOM_START);
+            ui.navigate("document/" + documentId);
         });
     }
 }

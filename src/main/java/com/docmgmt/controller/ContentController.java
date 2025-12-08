@@ -234,6 +234,84 @@ public class ContentController {
     }
     
     /**
+     * Transform content and create a secondary rendition
+     * @param id The primary content ID
+     * @param targetContentType Optional target content type (e.g., "text/plain")
+     * @return The created secondary rendition DTO
+     */
+    @Operation(
+        summary = "Transform content",
+        description = "Transform primary content (e.g., PDF to text) and create a secondary rendition"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "201", description = "Rendition created successfully"),
+        @ApiResponse(responseCode = "400", description = "Invalid request or no suitable transformer found"),
+        @ApiResponse(responseCode = "404", description = "Content not found"),
+        @ApiResponse(responseCode = "500", description = "Error during transformation")
+    })
+    @PostMapping("/{id}/transform")
+    @Transactional
+    public ResponseEntity<ContentDTO> transformContent(
+            @Parameter(description = "Primary content ID", required = true) @PathVariable Long id,
+            @Parameter(description = "Target content type (optional, will auto-select if omitted)") 
+            @RequestParam(required = false) String targetContentType) {
+        
+        try {
+            Content rendition = contentService.transformAndAddRendition(id, targetContentType);
+            return ResponseEntity.status(HttpStatus.CREATED).body(ContentDTO.fromEntity(rendition));
+        } catch (EntityNotFoundException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
+        } catch (com.docmgmt.transformer.TransformationException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, 
+                "Transformation failed: " + e.getMessage(), e);
+        } catch (IOException e) {
+            logger.error("IO error during transformation of content {}", id, e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, 
+                "IO error during transformation", e);
+        } catch (Exception e) {
+            logger.error("Error transforming content with ID: {}", id, e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, 
+                "Error transforming content", e);
+        }
+    }
+    
+    /**
+     * Get all renditions (primary and secondary) for a content item
+     * @param id The primary content ID
+     * @return List of all renditions including the primary
+     */
+    @Operation(
+        summary = "Get all renditions",
+        description = "Retrieve primary content and all its secondary renditions"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Renditions retrieved"),
+        @ApiResponse(responseCode = "400", description = "Content is not primary"),
+        @ApiResponse(responseCode = "404", description = "Content not found")
+    })
+    @GetMapping("/{id}/renditions")
+    public ResponseEntity<List<ContentDTO>> getAllRenditions(
+            @Parameter(description = "Primary content ID", required = true) @PathVariable Long id) {
+        try {
+            List<Content> renditions = contentService.getAllRenditions(id);
+            List<ContentDTO> dtos = renditions.stream()
+                .map(ContentDTO::fromEntity)
+                .collect(Collectors.toList());
+            return ResponseEntity.ok(dtos);
+        } catch (EntityNotFoundException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage(), e);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
+        } catch (Exception e) {
+            logger.error("Error getting renditions for content with ID: {}", id, e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, 
+                "Error retrieving renditions", e);
+        }
+    }
+    
+    /**
      * Move content from database to file store
      * @param id The content ID
      * @param fileStoreId The target file store ID
