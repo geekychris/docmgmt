@@ -8,6 +8,7 @@ import com.docmgmt.service.FileStoreService;
 import com.docmgmt.service.FolderService;
 import com.docmgmt.service.UserService;
 import com.docmgmt.ui.MainLayout;
+import com.docmgmt.ui.util.DocumentFieldRenderer;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
@@ -817,87 +818,26 @@ public class FolderView extends VerticalLayout {
             }
         });
         
-        // Edit mode toggle
-        Checkbox editModeCheckbox = new Checkbox("Edit Mode");
-        editModeCheckbox.setValue(false);
+        // Create dynamic container for document fields
+        VerticalLayout documentFieldsContainer = new VerticalLayout();
+        documentFieldsContainer.setPadding(false);
+        documentFieldsContainer.setSpacing(true);
         
-        // Document details form
-        TextField nameField = new TextField("Name");
-        nameField.setValue(reloadedDoc.getName());
-        nameField.setWidthFull();
-        nameField.setReadOnly(true);
+        // Use DocumentFieldRenderer to show all fields (base + type-specific)
+        DocumentFieldRenderer.renderReadOnlyFields(reloadedDoc, documentFieldsContainer);
         
-        TextField typeField = new TextField("Type");
-        typeField.setValue(reloadedDoc.getDocumentType() != null ? reloadedDoc.getDocumentType().toString() : "");
-        typeField.setReadOnly(true);
-        typeField.setWidthFull();
-        
-        TextArea descField = new TextArea("Description");
-        descField.setValue(reloadedDoc.getDescription() != null ? reloadedDoc.getDescription() : "");
-        descField.setWidthFull();
-        descField.setHeight("80px");
-        descField.setReadOnly(true);
-        
-        TextArea tagsField = new TextArea("Tags");
-        if (reloadedDoc.getTags() != null && !reloadedDoc.getTags().isEmpty()) {
-            tagsField.setValue(String.join(", ", reloadedDoc.getTags()));
-        }
-        tagsField.setWidthFull();
-        tagsField.setHeight("60px");
-        tagsField.setReadOnly(true);
-        
-        TextField keywordsField = new TextField("Keywords");
-        keywordsField.setValue(reloadedDoc.getKeywords() != null ? reloadedDoc.getKeywords() : "");
-        keywordsField.setWidthFull();
-        keywordsField.setReadOnly(true);
-        
-        TextField versionField = new TextField("Version");
-        versionField.setValue(reloadedDoc.getMajorVersion() + "." + reloadedDoc.getMinorVersion());
-        versionField.setReadOnly(true);
-        
-        TextField ownerField = new TextField("Owner");
-        ownerField.setValue(reloadedDoc.getOwner() != null ? reloadedDoc.getOwner().getUsername() : "-");
-        ownerField.setReadOnly(true);
-        
-        ComboBox<User> ownerCombo = new ComboBox<>("Owner");
-        ownerCombo.setItems(userService.findAll());
-        ownerCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
-        ownerCombo.setValue(reloadedDoc.getOwner());
-        ownerCombo.setWidthFull();
-        ownerCombo.setVisible(false);
-        
-        MultiSelectComboBox<User> authorsCombo = new MultiSelectComboBox<>("Authors");
-        authorsCombo.setItems(userService.findAll());
-        authorsCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
-        if (reloadedDoc.getAuthors() != null) {
-            authorsCombo.setValue(reloadedDoc.getAuthors());
-        }
-        authorsCombo.setWidthFull();
-        authorsCombo.setVisible(false);
-        
-        FormLayout formLayout = new FormLayout(nameField, typeField, descField, tagsField, keywordsField, 
-            versionField, ownerField, ownerCombo, authorsCombo);
-        formLayout.setResponsiveSteps(
-            new FormLayout.ResponsiveStep("0", 1),
-            new FormLayout.ResponsiveStep("500px", 2)
-        );
-        formLayout.setColspan(nameField, 2);
-        formLayout.setColspan(descField, 2);
-        formLayout.setColspan(tagsField, 2);
-        formLayout.setColspan(keywordsField, 2);
-        formLayout.setColspan(authorsCombo, 2);
-        
-        // Edit mode toggle handler
-        editModeCheckbox.addValueChangeListener(e -> {
-            boolean editMode = e.getValue();
-            nameField.setReadOnly(!editMode);
-            descField.setReadOnly(!editMode);
-            tagsField.setReadOnly(!editMode);
-            keywordsField.setReadOnly(!editMode);
-            ownerField.setVisible(!editMode);
-            ownerCombo.setVisible(editMode);
-            authorsCombo.setVisible(editMode);
-        });
+        // Add version info
+        HorizontalLayout versionRow = new HorizontalLayout();
+        versionRow.setWidthFull();
+        versionRow.setSpacing(true);
+        Span versionLabel = new Span("Version:");
+        versionLabel.getStyle()
+            .set("font-weight", "bold")
+            .set("min-width", "150px")
+            .set("color", "var(--lumo-secondary-text-color)");
+        Span versionValue = new Span(reloadedDoc.getMajorVersion() + "." + reloadedDoc.getMinorVersion());
+        versionRow.add(versionLabel, versionValue);
+        documentFieldsContainer.add(versionRow);
         
         // Content list
         H3 contentTitle = new H3("Content Objects");
@@ -1014,61 +954,16 @@ public class FolderView extends VerticalLayout {
         
         // Dialog buttons
         Button closeButton = new Button("Close", e -> dialog.close());
-        Button saveButton = new Button("Save Changes", e -> {
-            try {
-                reloadedDoc.setName(nameField.getValue());
-                reloadedDoc.setDescription(descField.getValue());
-                reloadedDoc.setKeywords(keywordsField.getValue());
-                
-                // Parse and set tags
-                String tagsValue = tagsField.getValue();
-                if (tagsValue != null && !tagsValue.trim().isEmpty()) {
-                    Set<String> tags = Arrays.stream(tagsValue.split(","))
-                        .map(String::trim)
-                        .filter(tag -> !tag.isEmpty())
-                        .collect(Collectors.toSet());
-                    reloadedDoc.setTags(tags);
-                } else {
-                    reloadedDoc.setTags(new HashSet<>());
-                }
-                
-                // Set owner and authors if in edit mode
-                if (editModeCheckbox.getValue()) {
-                    reloadedDoc.setOwner(ownerCombo.getValue());
-                    reloadedDoc.getAuthors().clear();
-                    if (authorsCombo.getValue() != null) {
-                        reloadedDoc.getAuthors().addAll(authorsCombo.getValue());
-                    }
-                }
-                
-                documentService.save(reloadedDoc);
-                
-                Notification.show("Document updated", 3000, Notification.Position.BOTTOM_START)
-                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
-                    
-                refreshFolderContents();
-                dialog.close();
-            } catch (Exception ex) {
-                Notification.show("Error saving document: " + ex.getMessage(), 
-                    3000, Notification.Position.BOTTOM_START)
-                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
-            }
-        });
-        saveButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-        saveButton.setVisible(false); // Hidden until edit mode enabled
+        closeButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         
-        // Show/hide save button based on edit mode
-        editModeCheckbox.addValueChangeListener(e -> {
-            saveButton.setVisible(e.getValue());
-        });
-        
-        HorizontalLayout buttons = new HorizontalLayout(closeButton, saveButton);
+        HorizontalLayout buttons = new HorizontalLayout(closeButton);
         buttons.setJustifyContentMode(FlexComponent.JustifyContentMode.END);
         buttons.setWidthFull();
         
         VerticalLayout layout = new VerticalLayout(
-            title, versionPicker, editModeCheckbox, new Hr(), 
-            formLayout,
+            title, versionPicker, new Hr(), 
+            documentFieldsContainer,
+            new Hr(),
             contentTitle,
             contentGrid,
             contentToolbar,

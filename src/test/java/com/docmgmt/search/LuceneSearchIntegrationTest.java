@@ -96,7 +96,8 @@ public class LuceneSearchIntegrationTest {
     
     @Test
     void testSimpleSearch() throws IOException, ParseException {
-        List<SearchResult> results = searchService.search("spring", 10);
+        SearchResultsWrapper wrapper = searchService.search("spring", 10);
+        List<SearchResult> results = wrapper.getResults();
         
         assertFalse(results.isEmpty());
         assertTrue(results.stream().anyMatch(r -> r.getDocumentId().equals(testDoc1.getId())));
@@ -104,7 +105,8 @@ public class LuceneSearchIntegrationTest {
     
     @Test
     void testSearchInName() throws IOException, ParseException {
-        List<SearchResult> results = searchService.search("Framework", 10);
+        SearchResultsWrapper wrapper = searchService.search("Framework", 10);
+        List<SearchResult> results = wrapper.getResults();
         
         assertFalse(results.isEmpty());
         assertEquals(testDoc1.getId(), results.get(0).getDocumentId());
@@ -112,7 +114,8 @@ public class LuceneSearchIntegrationTest {
     
     @Test
     void testSearchInDescription() throws IOException, ParseException {
-        List<SearchResult> results = searchService.search("comprehensive", 10);
+        SearchResultsWrapper wrapper = searchService.search("comprehensive", 10);
+        List<SearchResult> results = wrapper.getResults();
         
         assertFalse(results.isEmpty());
         assertEquals(testDoc1.getId(), results.get(0).getDocumentId());
@@ -120,7 +123,8 @@ public class LuceneSearchIntegrationTest {
     
     @Test
     void testSearchInKeywords() throws IOException, ParseException {
-        List<SearchResult> results = searchService.search("programming", 10);
+        SearchResultsWrapper wrapper = searchService.search("programming", 10);
+        List<SearchResult> results = wrapper.getResults();
         
         assertFalse(results.isEmpty());
         assertTrue(results.stream().anyMatch(r -> r.getDocumentId().equals(testDoc2.getId())));
@@ -128,7 +132,8 @@ public class LuceneSearchIntegrationTest {
     
     @Test
     void testSearchInTags() throws IOException, ParseException {
-        List<SearchResult> results = searchService.search("tutorial", 10);
+        SearchResultsWrapper wrapper = searchService.search("tutorial", 10);
+        List<SearchResult> results = wrapper.getResults();
         
         assertEquals(2, results.size());
         assertTrue(results.stream().anyMatch(r -> r.getDocumentId().equals(testDoc1.getId())));
@@ -137,7 +142,8 @@ public class LuceneSearchIntegrationTest {
     
     @Test
     void testSearchInIndexableContent() throws IOException, ParseException {
-        List<SearchResult> results = searchService.search("enterprise", 10);
+        SearchResultsWrapper wrapper = searchService.search("enterprise", 10);
+        List<SearchResult> results = wrapper.getResults();
         
         assertFalse(results.isEmpty());
         assertEquals(testDoc1.getId(), results.get(0).getDocumentId());
@@ -148,7 +154,8 @@ public class LuceneSearchIntegrationTest {
         Map<String, String> fieldQueries = new HashMap<>();
         fieldQueries.put(LuceneIndexService.FIELD_NAME, "Python");
         
-        List<SearchResult> results = searchService.searchFields(fieldQueries, 10);
+        SearchResultsWrapper wrapper = searchService.searchFields(fieldQueries, 10);
+        List<SearchResult> results = wrapper.getResults();
         
         assertEquals(1, results.size());
         assertEquals(testDoc2.getId(), results.get(0).getDocumentId());
@@ -160,7 +167,8 @@ public class LuceneSearchIntegrationTest {
         fieldQueries.put(LuceneIndexService.FIELD_NAME, "Database");
         fieldQueries.put(LuceneIndexService.FIELD_KEYWORDS, "sql");
         
-        List<SearchResult> results = searchService.searchFields(fieldQueries, 10);
+        SearchResultsWrapper wrapper = searchService.searchFields(fieldQueries, 10);
+        List<SearchResult> results = wrapper.getResults();
         
         assertEquals(1, results.size());
         assertEquals(testDoc3.getId(), results.get(0).getDocumentId());
@@ -172,10 +180,11 @@ public class LuceneSearchIntegrationTest {
         fieldQueries.put(LuceneIndexService.FIELD_NAME, "Spring");
         fieldQueries.put(LuceneIndexService.FIELD_NAME, "Python");
         
-        List<SearchResult> results = searchService.searchFieldsWithOperator(
+        SearchResultsWrapper wrapper = searchService.searchFieldsWithOperator(
                 fieldQueries, 
                 org.apache.lucene.search.BooleanClause.Occur.SHOULD, 
                 10);
+        List<SearchResult> results = wrapper.getResults();
         
         assertFalse(results.isEmpty());
     }
@@ -183,7 +192,8 @@ public class LuceneSearchIntegrationTest {
     @Test
     void testMultiFieldSearch() throws IOException, ParseException {
         String[] fields = {LuceneIndexService.FIELD_NAME, LuceneIndexService.FIELD_DESCRIPTION};
-        List<SearchResult> results = searchService.searchMultipleFields("guide", fields, 10);
+        SearchResultsWrapper wrapper = searchService.searchMultipleFields("guide", fields, 10);
+        List<SearchResult> results = wrapper.getResults();
         
         assertFalse(results.isEmpty());
         assertEquals(testDoc1.getId(), results.get(0).getDocumentId());
@@ -191,7 +201,8 @@ public class LuceneSearchIntegrationTest {
     
     @Test
     void testSearchNoResults() throws IOException, ParseException {
-        List<SearchResult> results = searchService.search("nonexistent", 10);
+        SearchResultsWrapper wrapper = searchService.search("nonexistent", 10);
+        List<SearchResult> results = wrapper.getResults();
         
         assertTrue(results.isEmpty());
     }
@@ -199,14 +210,16 @@ public class LuceneSearchIntegrationTest {
     @Test
     void testRemoveDocument() throws IOException, ParseException {
         // First, verify document is in index
-        List<SearchResult> beforeResults = searchService.search("Python", 10);
+        SearchResultsWrapper beforeWrapper = searchService.search("Python", 10);
+        List<SearchResult> beforeResults = beforeWrapper.getResults();
         assertTrue(beforeResults.stream().anyMatch(r -> r.getDocumentId().equals(testDoc2.getId())));
         
         // Remove document from index
         searchService.removeDocument(testDoc2.getId());
         
         // Verify document is no longer in results
-        List<SearchResult> afterResults = searchService.search("Python", 10);
+        SearchResultsWrapper afterWrapper = searchService.search("Python", 10);
+        List<SearchResult> afterResults = afterWrapper.getResults();
         assertFalse(afterResults.stream().anyMatch(r -> r.getDocumentId().equals(testDoc2.getId())));
     }
     
@@ -237,7 +250,8 @@ public class LuceneSearchIntegrationTest {
     
     @Test
     void testSearchResultContainsMetadata() throws IOException, ParseException {
-        List<SearchResult> results = searchService.search("Spring", 10);
+        SearchResultsWrapper wrapper = searchService.search("Spring", 10);
+        List<SearchResult> results = wrapper.getResults();
         
         assertFalse(results.isEmpty());
         SearchResult result = results.get(0);
@@ -257,7 +271,8 @@ public class LuceneSearchIntegrationTest {
         searchService.indexDocument(testDoc1);
         
         // Search for updated content
-        List<SearchResult> results = searchService.search("Updated", 10);
+        SearchResultsWrapper wrapper = searchService.search("Updated", 10);
+        List<SearchResult> results = wrapper.getResults();
         
         assertFalse(results.isEmpty());
         assertEquals(testDoc1.getId(), results.get(0).getDocumentId());
@@ -265,7 +280,8 @@ public class LuceneSearchIntegrationTest {
     
     @Test
     void testWildcardSearch() throws IOException, ParseException {
-        List<SearchResult> results = searchService.search("prog*", 10);
+        SearchResultsWrapper wrapper = searchService.search("prog*", 10);
+        List<SearchResult> results = wrapper.getResults();
         
         assertFalse(results.isEmpty());
         assertTrue(results.stream().anyMatch(r -> r.getDocumentId().equals(testDoc2.getId())));
@@ -273,7 +289,8 @@ public class LuceneSearchIntegrationTest {
     
     @Test
     void testPhraseSearch() throws IOException, ParseException {
-        List<SearchResult> results = searchService.search("\"Spring Framework\"", 10);
+        SearchResultsWrapper wrapper = searchService.search("\"Spring Framework\"", 10);
+        List<SearchResult> results = wrapper.getResults();
         
         assertFalse(results.isEmpty());
         assertEquals(testDoc1.getId(), results.get(0).getDocumentId());

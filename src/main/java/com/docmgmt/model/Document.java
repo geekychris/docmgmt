@@ -14,6 +14,7 @@ import java.util.Set;
 @Table(name = "document")
 @Inheritance(strategy = InheritanceType.JOINED)
 @DiscriminatorColumn(name = "doc_type", discriminatorType = DiscriminatorType.STRING)
+@EntityListeners(com.docmgmt.listener.DocumentIndexListener.class)
 @Getter
 @Setter
 @NoArgsConstructor

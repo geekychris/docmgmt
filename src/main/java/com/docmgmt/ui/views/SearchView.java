@@ -5,6 +5,7 @@ import com.docmgmt.search.LuceneIndexService;
 import com.docmgmt.search.SearchResult;
 import com.docmgmt.search.SearchResultsWrapper;
 import com.docmgmt.service.DocumentService;
+import com.docmgmt.ui.util.DocumentFieldRenderer;
 import com.vaadin.flow.data.provider.DataProvider;
 import com.vaadin.flow.data.provider.ListDataProvider;
 import com.docmgmt.ui.MainLayout;
@@ -189,6 +190,20 @@ public class SearchView extends VerticalLayout {
         
         resultsGrid.addColumn(SearchResult::getName).setHeader("Name").setAutoWidth(true).setFlexGrow(1);
         resultsGrid.addColumn(SearchResult::getDescription).setHeader("Description").setAutoWidth(true).setFlexGrow(2);
+        
+        // Add type-specific details column
+        resultsGrid.addColumn(result -> {
+            if (result.getDocumentId() != null) {
+                try {
+                    Document doc = documentService.findById(result.getDocumentId());
+                    return DocumentFieldRenderer.getTypeSpecificSummary(doc);
+                } catch (Exception e) {
+                    return "";
+                }
+            }
+            return "";
+        }).setHeader("Type-Specific Details").setAutoWidth(true).setFlexGrow(1);
+        
         resultsGrid.addColumn(SearchResult::getKeywords).setHeader("Keywords").setAutoWidth(true);
         resultsGrid.addColumn(SearchResult::getTags).setHeader("Tags").setAutoWidth(true);
         resultsGrid.addColumn(result -> String.format("%.2f", result.getScore()))

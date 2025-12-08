@@ -7,6 +7,7 @@ import com.docmgmt.service.DocumentService;
 import com.docmgmt.service.FileStoreService;
 import com.docmgmt.service.UserService;
 import com.docmgmt.ui.MainLayout;
+import com.docmgmt.ui.util.DocumentFieldRenderer;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
@@ -29,6 +30,8 @@ import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.textfield.TextArea;
+import com.vaadin.flow.component.textfield.NumberField;
+import com.vaadin.flow.component.datepicker.DatePicker;
 import com.vaadin.flow.component.upload.Upload;
 import com.vaadin.flow.component.upload.receivers.MemoryBuffer;
 import com.vaadin.flow.component.combobox.MultiSelectComboBox;
@@ -58,8 +61,11 @@ import com.vaadin.flow.router.Route;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -298,6 +304,9 @@ public class DocumentView extends VerticalLayout {
         
         documentDialog.removeAll();
         
+        // Create a NEW binder for each dialog to avoid stale bindings from previous documents
+        binder = new BeanValidationBinder<>(Document.class);
+        
         // Create dialog title based on whether we are creating or editing
         H2 title = new H2(document.getId() == null ? "Create New Document" : "Edit Document");
         
@@ -334,6 +343,7 @@ public class DocumentView extends VerticalLayout {
         // Create the form layout
         FormLayout formLayout = new FormLayout();
         formLayout.add(nameField, typeCombo, descriptionField, ownerCombo, tagsField, keywordsField, authorsCombo);
+        
         formLayout.setResponsiveSteps(
             new FormLayout.ResponsiveStep("0", 1),
             new FormLayout.ResponsiveStep("500px", 2)
@@ -407,8 +417,12 @@ public class DocumentView extends VerticalLayout {
                 }
             );
         
-        // Read the document into the form
+        // Read the document into the form for base fields only
         binder.readBean(document);
+        
+        // Add type-specific fields AFTER reading base fields
+        // Type-specific fields are already initialized with values in their add methods
+        addTypeSpecificFields(formLayout, document);
         
         // Add components to the dialog
         VerticalLayout dialogLayout = new VerticalLayout(
@@ -434,6 +448,282 @@ public class DocumentView extends VerticalLayout {
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
             }
         }
+    }
+    
+    /**
+     * Add type-specific fields to the form based on document type.
+     * These fields are NOT bound to the main binder to avoid cross-contamination between document types.
+     * Instead, we handle their values manually in saveDocument().
+     */
+    private Map<String, Object> typeSpecificFieldMap = new HashMap<>();
+    
+    private void addTypeSpecificFields(FormLayout formLayout, Document document) {
+        // Clear previous type-specific fields
+        typeSpecificFieldMap.clear();
+        
+        if (document instanceof Article) {
+            addArticleFields(formLayout, (Article) document);
+        } else if (document instanceof Report) {
+            addReportFields(formLayout, (Report) document);
+        } else if (document instanceof Contract) {
+            addContractFields(formLayout, (Contract) document);
+        } else if (document instanceof Manual) {
+            addManualFields(formLayout, (Manual) document);
+        } else if (document instanceof Presentation) {
+            addPresentationFields(formLayout, (Presentation) document);
+        } else if (document instanceof TripReport) {
+            addTripReportFields(formLayout, (TripReport) document);
+        }
+    }
+    
+    private void addArticleFields(FormLayout formLayout, Article article) {
+        DatePicker publicationDatePicker = new DatePicker("Publication Date");
+        publicationDatePicker.setValue(article.getPublicationDate());
+        publicationDatePicker.setWidthFull();
+        publicationDatePicker.addValueChangeListener(e -> article.setPublicationDate(e.getValue()));
+        typeSpecificFieldMap.put("publicationDate", publicationDatePicker);
+        
+        TextField journalField = new TextField("Journal");
+        journalField.setValue(article.getJournal() != null ? article.getJournal() : "");
+        journalField.setWidthFull();
+        journalField.addValueChangeListener(e -> article.setJournal(e.getValue()));
+        typeSpecificFieldMap.put("journal", journalField);
+        
+        TextField volumeField = new TextField("Volume");
+        volumeField.setValue(article.getVolume() != null ? article.getVolume() : "");
+        volumeField.addValueChangeListener(e -> article.setVolume(e.getValue()));
+        typeSpecificFieldMap.put("volume", volumeField);
+        
+        TextField issueField = new TextField("Issue");
+        issueField.setValue(article.getIssue() != null ? article.getIssue() : "");
+        issueField.addValueChangeListener(e -> article.setIssue(e.getValue()));
+        typeSpecificFieldMap.put("issue", issueField);
+        
+        TextField pagesField = new TextField("Pages");
+        pagesField.setValue(article.getPages() != null ? article.getPages() : "");
+        pagesField.addValueChangeListener(e -> article.setPages(e.getValue()));
+        typeSpecificFieldMap.put("pages", pagesField);
+        
+        TextField doiField = new TextField("DOI");
+        doiField.setValue(article.getDoi() != null ? article.getDoi() : "");
+        doiField.setWidthFull();
+        doiField.addValueChangeListener(e -> article.setDoi(e.getValue()));
+        typeSpecificFieldMap.put("doi", doiField);
+        
+        formLayout.add(publicationDatePicker, journalField, volumeField, issueField, pagesField, doiField);
+        formLayout.setColspan(journalField, 2);
+        formLayout.setColspan(doiField, 2);
+    }
+    
+    private void addReportFields(FormLayout formLayout, Report report) {
+        DatePicker reportDatePicker = new DatePicker("Report Date");
+        reportDatePicker.setValue(report.getReportDate());
+        reportDatePicker.setWidthFull();
+        reportDatePicker.addValueChangeListener(e -> report.setReportDate(e.getValue()));
+        typeSpecificFieldMap.put("reportDate", reportDatePicker);
+        
+        TextField reportNumberField = new TextField("Report Number");
+        reportNumberField.setValue(report.getReportNumber() != null ? report.getReportNumber() : "");
+        reportNumberField.setWidthFull();
+        reportNumberField.addValueChangeListener(e -> report.setReportNumber(e.getValue()));
+        typeSpecificFieldMap.put("reportNumber", reportNumberField);
+        
+        TextField departmentField = new TextField("Department");
+        departmentField.setValue(report.getDepartment() != null ? report.getDepartment() : "");
+        departmentField.setWidthFull();
+        departmentField.addValueChangeListener(e -> report.setDepartment(e.getValue()));
+        typeSpecificFieldMap.put("department", departmentField);
+        
+        TextField confidentialityField = new TextField("Confidentiality Level");
+        confidentialityField.setValue(report.getConfidentialityLevel() != null ? report.getConfidentialityLevel() : "");
+        confidentialityField.setWidthFull();
+        confidentialityField.addValueChangeListener(e -> report.setConfidentialityLevel(e.getValue()));
+        typeSpecificFieldMap.put("confidentialityLevel", confidentialityField);
+        
+        formLayout.add(reportDatePicker, reportNumberField, departmentField, confidentialityField);
+    }
+    
+    private void addContractFields(FormLayout formLayout, Contract contract) {
+        TextField contractNumberField = new TextField("Contract Number");
+        contractNumberField.setValue(contract.getContractNumber() != null ? contract.getContractNumber() : "");
+        contractNumberField.setWidthFull();
+        contractNumberField.addValueChangeListener(e -> contract.setContractNumber(e.getValue()));
+        typeSpecificFieldMap.put("contractNumber", contractNumberField);
+        
+        DatePicker effectiveDatePicker = new DatePicker("Effective Date");
+        effectiveDatePicker.setValue(contract.getEffectiveDate());
+        effectiveDatePicker.setWidthFull();
+        effectiveDatePicker.addValueChangeListener(e -> contract.setEffectiveDate(e.getValue()));
+        typeSpecificFieldMap.put("effectiveDate", effectiveDatePicker);
+        
+        DatePicker expirationDatePicker = new DatePicker("Expiration Date");
+        expirationDatePicker.setValue(contract.getExpirationDate());
+        expirationDatePicker.setWidthFull();
+        expirationDatePicker.addValueChangeListener(e -> contract.setExpirationDate(e.getValue()));
+        typeSpecificFieldMap.put("expirationDate", expirationDatePicker);
+        
+        TextArea partiesField = new TextArea("Parties (comma separated)");
+        if (contract.getParties() != null && !contract.getParties().isEmpty()) {
+            partiesField.setValue(String.join(", ", contract.getParties()));
+        }
+        partiesField.setWidthFull();
+        partiesField.setHeight("80px");
+        partiesField.addValueChangeListener(e -> {
+            String value = e.getValue();
+            if (value == null || value.trim().isEmpty()) {
+                contract.setParties(new HashSet<>());
+            } else {
+                contract.setParties(Arrays.stream(value.split(","))
+                    .map(String::trim)
+                    .filter(p -> !p.isEmpty())
+                    .collect(Collectors.toSet()));
+            }
+        });
+        typeSpecificFieldMap.put("parties", partiesField);
+        
+        NumberField contractValueField = new NumberField("Contract Value");
+        contractValueField.setValue(contract.getContractValue() != null ? contract.getContractValue() : 0.0);
+        contractValueField.setWidthFull();
+        contractValueField.addValueChangeListener(e -> contract.setContractValue(e.getValue()));
+        typeSpecificFieldMap.put("contractValue", contractValueField);
+        
+        formLayout.add(contractNumberField, effectiveDatePicker, expirationDatePicker, partiesField, contractValueField);
+        formLayout.setColspan(partiesField, 2);
+    }
+    
+    private void addManualFields(FormLayout formLayout, Manual manual) {
+        TextField manualVersionField = new TextField("Manual Version");
+        manualVersionField.setValue(manual.getManualVersion() != null ? manual.getManualVersion() : "");
+        manualVersionField.setWidthFull();
+        manualVersionField.addValueChangeListener(e -> manual.setManualVersion(e.getValue()));
+        typeSpecificFieldMap.put("manualVersion", manualVersionField);
+        
+        TextField productNameField = new TextField("Product Name");
+        productNameField.setValue(manual.getProductName() != null ? manual.getProductName() : "");
+        productNameField.setWidthFull();
+        productNameField.addValueChangeListener(e -> manual.setProductName(e.getValue()));
+        typeSpecificFieldMap.put("productName", productNameField);
+        
+        DatePicker lastReviewDatePicker = new DatePicker("Last Review Date");
+        lastReviewDatePicker.setValue(manual.getLastReviewDate());
+        lastReviewDatePicker.setWidthFull();
+        lastReviewDatePicker.addValueChangeListener(e -> manual.setLastReviewDate(e.getValue()));
+        typeSpecificFieldMap.put("lastReviewDate", lastReviewDatePicker);
+        
+        TextField targetAudienceField = new TextField("Target Audience");
+        targetAudienceField.setValue(manual.getTargetAudience() != null ? manual.getTargetAudience() : "");
+        targetAudienceField.setWidthFull();
+        targetAudienceField.addValueChangeListener(e -> manual.setTargetAudience(e.getValue()));
+        typeSpecificFieldMap.put("targetAudience", targetAudienceField);
+        
+        formLayout.add(manualVersionField, productNameField, lastReviewDatePicker, targetAudienceField);
+    }
+    
+    private void addPresentationFields(FormLayout formLayout, Presentation presentation) {
+        DatePicker presentationDatePicker = new DatePicker("Presentation Date");
+        presentationDatePicker.setValue(presentation.getPresentationDate());
+        presentationDatePicker.setWidthFull();
+        presentationDatePicker.addValueChangeListener(e -> presentation.setPresentationDate(e.getValue()));
+        typeSpecificFieldMap.put("presentationDate", presentationDatePicker);
+        
+        TextField venueField = new TextField("Venue");
+        venueField.setValue(presentation.getVenue() != null ? presentation.getVenue() : "");
+        venueField.setWidthFull();
+        venueField.addValueChangeListener(e -> presentation.setVenue(e.getValue()));
+        typeSpecificFieldMap.put("venue", venueField);
+        
+        TextField audienceField = new TextField("Audience");
+        audienceField.setValue(presentation.getAudience() != null ? presentation.getAudience() : "");
+        audienceField.setWidthFull();
+        audienceField.addValueChangeListener(e -> presentation.setAudience(e.getValue()));
+        typeSpecificFieldMap.put("audience", audienceField);
+        
+        NumberField durationField = new NumberField("Duration (minutes)");
+        durationField.setValue(presentation.getDurationMinutes() != null ? presentation.getDurationMinutes().doubleValue() : 0.0);
+        durationField.setWidthFull();
+        durationField.addValueChangeListener(e -> presentation.setDurationMinutes(e.getValue() != null ? e.getValue().intValue() : null));
+        typeSpecificFieldMap.put("durationMinutes", durationField);
+        
+        formLayout.add(presentationDatePicker, venueField, audienceField, durationField);
+    }
+    
+    private void addTripReportFields(FormLayout formLayout, TripReport tripReport) {
+        TextField destinationField = new TextField("Destination");
+        destinationField.setValue(tripReport.getDestination() != null ? tripReport.getDestination() : "");
+        destinationField.setWidthFull();
+        destinationField.addValueChangeListener(e -> tripReport.setDestination(e.getValue()));
+        typeSpecificFieldMap.put("destination", destinationField);
+        
+        DatePicker startDatePicker = new DatePicker("Trip Start Date");
+        startDatePicker.setValue(tripReport.getTripStartDate());
+        startDatePicker.setWidthFull();
+        startDatePicker.addValueChangeListener(e -> tripReport.setTripStartDate(e.getValue()));
+        typeSpecificFieldMap.put("tripStartDate", startDatePicker);
+        
+        DatePicker endDatePicker = new DatePicker("Trip End Date");
+        endDatePicker.setValue(tripReport.getTripEndDate());
+        endDatePicker.setWidthFull();
+        endDatePicker.addValueChangeListener(e -> tripReport.setTripEndDate(e.getValue()));
+        typeSpecificFieldMap.put("tripEndDate", endDatePicker);
+        
+        TextArea purposeField = new TextArea("Purpose");
+        purposeField.setValue(tripReport.getPurpose() != null ? tripReport.getPurpose() : "");
+        purposeField.setWidthFull();
+        purposeField.setHeight("100px");
+        purposeField.addValueChangeListener(e -> tripReport.setPurpose(e.getValue()));
+        typeSpecificFieldMap.put("purpose", purposeField);
+        
+        NumberField budgetField = new NumberField("Budget Amount");
+        budgetField.setValue(tripReport.getBudgetAmount() != null ? tripReport.getBudgetAmount() : 0.0);
+        budgetField.setWidthFull();
+        budgetField.addValueChangeListener(e -> tripReport.setBudgetAmount(e.getValue()));
+        typeSpecificFieldMap.put("budgetAmount", budgetField);
+        
+        NumberField actualField = new NumberField("Actual Amount");
+        actualField.setValue(tripReport.getActualAmount() != null ? tripReport.getActualAmount() : 0.0);
+        actualField.setWidthFull();
+        actualField.addValueChangeListener(e -> tripReport.setActualAmount(e.getValue()));
+        typeSpecificFieldMap.put("actualAmount", actualField);
+        
+        TextArea attendeesField = new TextArea("Attendees (comma separated)");
+        if (tripReport.getAttendees() != null && !tripReport.getAttendees().isEmpty()) {
+            attendeesField.setValue(String.join(", ", tripReport.getAttendees()));
+        }
+        attendeesField.setWidthFull();
+        attendeesField.setHeight("80px");
+        attendeesField.addValueChangeListener(e -> {
+            String value = e.getValue();
+            if (value == null || value.trim().isEmpty()) {
+                tripReport.setAttendees(new HashSet<>());
+            } else {
+                tripReport.setAttendees(Arrays.stream(value.split(","))
+                    .map(String::trim)
+                    .filter(a -> !a.isEmpty())
+                    .collect(Collectors.toSet()));
+            }
+        });
+        typeSpecificFieldMap.put("attendees", attendeesField);
+        
+        TextArea summaryField = new TextArea("Summary");
+        summaryField.setValue(tripReport.getSummary() != null ? tripReport.getSummary() : "");
+        summaryField.setWidthFull();
+        summaryField.setHeight("100px");
+        summaryField.addValueChangeListener(e -> tripReport.setSummary(e.getValue()));
+        typeSpecificFieldMap.put("summary", summaryField);
+        
+        TextArea followUpField = new TextArea("Follow-up Actions");
+        followUpField.setValue(tripReport.getFollowUpActions() != null ? tripReport.getFollowUpActions() : "");
+        followUpField.setWidthFull();
+        followUpField.setHeight("100px");
+        followUpField.addValueChangeListener(e -> tripReport.setFollowUpActions(e.getValue()));
+        typeSpecificFieldMap.put("followUpActions", followUpField);
+        
+        formLayout.add(destinationField, startDatePicker, endDatePicker, purposeField, 
+                      budgetField, actualField, attendeesField, summaryField, followUpField);
+        formLayout.setColspan(purposeField, 2);
+        formLayout.setColspan(attendeesField, 2);
+        formLayout.setColspan(summaryField, 2);
+        formLayout.setColspan(followUpField, 2);
     }
     
     private void confirmDelete(Document document) {

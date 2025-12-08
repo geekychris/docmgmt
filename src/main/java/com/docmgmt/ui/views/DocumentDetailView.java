@@ -7,6 +7,7 @@ import com.docmgmt.service.ContentService;
 import com.docmgmt.service.DocumentService;
 import com.docmgmt.service.UserService;
 import com.docmgmt.ui.MainLayout;
+import com.docmgmt.ui.util.DocumentFieldRenderer;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -181,31 +182,15 @@ public class DocumentDetailView extends VerticalLayout implements HasUrlParamete
             
             panel.add(infoTitle, formLayout, buttonLayout);
         } else {
-            // Read-only display
+            // Read-only display using DocumentFieldRenderer
             VerticalLayout infoLayout = new VerticalLayout();
             infoLayout.setSpacing(true);
             infoLayout.setPadding(false);
             
-            addInfoRow(infoLayout, "Name:", currentDocument.getName());
-            addInfoRow(infoLayout, "Type:", currentDocument.getDocumentType().toString());
-            addInfoRow(infoLayout, "Description:", currentDocument.getDescription());
-            addInfoRow(infoLayout, "Keywords:", currentDocument.getKeywords());
+            // Use DocumentFieldRenderer to show all fields (base + type-specific)
+            DocumentFieldRenderer.renderReadOnlyFields(currentDocument, infoLayout);
             
-            if (currentDocument.getTags() != null && !currentDocument.getTags().isEmpty()) {
-                addInfoRow(infoLayout, "Tags:", String.join(", ", currentDocument.getTags()));
-            }
-            
-            if (currentDocument.getOwner() != null) {
-                addInfoRow(infoLayout, "Owner:", currentDocument.getOwner().getUsername());
-            }
-            
-            if (currentDocument.getAuthors() != null && !currentDocument.getAuthors().isEmpty()) {
-                String authors = currentDocument.getAuthors().stream()
-                    .map(User::getUsername)
-                    .collect(Collectors.joining(", "));
-                addInfoRow(infoLayout, "Authors:", authors);
-            }
-            
+            // Add version and timestamps
             addInfoRow(infoLayout, "Version:", 
                 currentDocument.getMajorVersion() + "." + currentDocument.getMinorVersion());
             
@@ -287,6 +272,10 @@ public class DocumentDetailView extends VerticalLayout implements HasUrlParamete
         });
         
         formLayout.add(nameField, descriptionField, keywordsField, tagsField, ownerCombo, authorsCombo);
+        
+        // Add type-specific editable fields using DocumentFieldRenderer
+        DocumentFieldRenderer.renderEditableFields(currentDocument, formLayout, ownerCombo, authorsCombo, userService.findAll());
+        
         formLayout.setResponsiveSteps(
             new FormLayout.ResponsiveStep("0", 1)
         );
@@ -340,26 +329,10 @@ public class DocumentDetailView extends VerticalLayout implements HasUrlParamete
             infoLayout.setSpacing(true);
             infoLayout.setPadding(false);
             
-            addInfoRow(infoLayout, "Name:", currentDocument.getName());
-            addInfoRow(infoLayout, "Type:", currentDocument.getDocumentType().toString());
-            addInfoRow(infoLayout, "Description:", currentDocument.getDescription());
-            addInfoRow(infoLayout, "Keywords:", currentDocument.getKeywords());
+            // Use DocumentFieldRenderer to show all fields (base + type-specific)
+            DocumentFieldRenderer.renderReadOnlyFields(currentDocument, infoLayout);
             
-            if (currentDocument.getTags() != null && !currentDocument.getTags().isEmpty()) {
-                addInfoRow(infoLayout, "Tags:", String.join(", ", currentDocument.getTags()));
-            }
-            
-            if (currentDocument.getOwner() != null) {
-                addInfoRow(infoLayout, "Owner:", currentDocument.getOwner().getUsername());
-            }
-            
-            if (currentDocument.getAuthors() != null && !currentDocument.getAuthors().isEmpty()) {
-                String authors = currentDocument.getAuthors().stream()
-                    .map(User::getUsername)
-                    .collect(Collectors.joining(", "));
-                addInfoRow(infoLayout, "Authors:", authors);
-            }
-            
+            // Add version and timestamps
             addInfoRow(infoLayout, "Version:", 
                 currentDocument.getMajorVersion() + "." + currentDocument.getMinorVersion());
             
