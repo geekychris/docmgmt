@@ -1,6 +1,8 @@
 package com.docmgmt.repository;
 
 import com.docmgmt.model.SysObject;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.NoRepositoryBean;
@@ -32,6 +34,25 @@ public interface BaseSysObjectRepository<T extends SysObject> extends JpaReposit
            "WHERE NOT EXISTS (SELECT 1 FROM #{#entityName} newer " +
            "WHERE newer.parentVersion = o)")
     List<T> findLatestVersions();
+    
+    /**
+     * Find latest version of objects with pagination
+     * @param pageable Pagination information
+     * @return Page of objects with the latest version
+     */
+    @Query("SELECT o FROM #{#entityName} o " +
+           "WHERE NOT EXISTS (SELECT 1 FROM #{#entityName} newer " +
+           "WHERE newer.parentVersion = o)")
+    Page<T> findLatestVersionsPaginated(Pageable pageable);
+    
+    /**
+     * Count latest versions only
+     * @return Count of latest versions
+     */
+    @Query("SELECT COUNT(o) FROM #{#entityName} o " +
+           "WHERE NOT EXISTS (SELECT 1 FROM #{#entityName} newer " +
+           "WHERE newer.parentVersion = o)")
+    long countLatestVersions();
     
     /**
      * Find object by name and specific version

@@ -4,6 +4,8 @@ import com.docmgmt.model.Content;
 import com.docmgmt.model.SysObject;
 import com.docmgmt.repository.BaseSysObjectRepository;
 import jakarta.persistence.EntityNotFoundException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -75,6 +77,44 @@ public abstract class AbstractSysObjectService<T extends SysObject, R extends Ba
     @Transactional(readOnly = true)
     public List<T> findAllLatestVersions() {
         return repository.findLatestVersions();
+    }
+    
+    /**
+     * Find all SysObjects with pagination
+     * @param pageable Pagination information
+     * @return Page of entities
+     */
+    @Transactional(readOnly = true)
+    public Page<T> findAllPaginated(Pageable pageable) {
+        return repository.findAll(pageable);
+    }
+    
+    /**
+     * Find all latest versions with pagination
+     * @param pageable Pagination information
+     * @return Page of latest versions
+     */
+    @Transactional(readOnly = true)
+    public Page<T> findAllLatestVersionsPaginated(Pageable pageable) {
+        return repository.findLatestVersionsPaginated(pageable);
+    }
+    
+    /**
+     * Count all SysObjects
+     * @return Total count
+     */
+    @Transactional(readOnly = true)
+    public long count() {
+        return repository.count();
+    }
+    
+    /**
+     * Count latest versions only
+     * @return Count of latest versions
+     */
+    @Transactional(readOnly = true)
+    public long countLatestVersions() {
+        return repository.countLatestVersions();
     }
 
     /**

@@ -3,6 +3,8 @@ package com.docmgmt.service;
 import com.docmgmt.model.Document;
 import com.docmgmt.repository.DocumentRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -169,6 +171,56 @@ public class DocumentService extends AbstractSysObjectService<Document, Document
         }
         
         return initializedVersions;
+    }
+    
+    /**
+     * Override findAllPaginated to ensure collections are initialized
+     * @param pageable Pagination information
+     * @return Page of documents with initialized collections
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Page<Document> findAllPaginated(Pageable pageable) {
+        Page<Document> page = super.findAllPaginated(pageable);
+        // Initialize collections while still in transaction
+        page.getContent().forEach(this::initializeDocument);
+        return page;
+    }
+    
+    /**
+     * Override findAllLatestVersionsPaginated to ensure collections are initialized
+     * @param pageable Pagination information
+     * @return Page of latest version documents with initialized collections
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Page<Document> findAllLatestVersionsPaginated(Pageable pageable) {
+        Page<Document> page = super.findAllLatestVersionsPaginated(pageable);
+        // Initialize collections while still in transaction
+        page.getContent().forEach(this::initializeDocument);
+        return page;
+    }
+    
+    /**
+     * Helper method to initialize all lazy-loaded collections on a document
+     * @param doc The document to initialize
+     */
+    private void initializeDocument(Document doc) {
+        if (doc.getTags() != null) {
+            doc.getTags().size();
+        }
+        if (doc.getContents() != null) {
+            doc.getContents().size();
+        }
+        if (doc.getOwner() != null) {
+            doc.getOwner().getName();
+        }
+        if (doc.getAuthors() != null) {
+            doc.getAuthors().size();
+        }
+        if (doc.getParentVersion() != null) {
+            doc.getParentVersion().getName();
+        }
     }
 }
 

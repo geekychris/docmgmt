@@ -2,6 +2,7 @@ package com.docmgmt.controller;
 
 import com.docmgmt.search.LuceneIndexService;
 import com.docmgmt.search.SearchResult;
+import com.docmgmt.search.SearchResultsWrapper;
 import com.docmgmt.service.DocumentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -40,14 +41,14 @@ public class SearchController {
         @ApiResponse(responseCode = "400", description = "Invalid query syntax")
     })
     @GetMapping
-    public ResponseEntity<List<SearchResult>> search(
+    public ResponseEntity<SearchResultsWrapper> search(
             @Parameter(description = "Search query using Lucene syntax", required = true, 
                       example = "spring framework") 
             @RequestParam String q,
             @Parameter(description = "Maximum number of results to return", example = "50") 
             @RequestParam(defaultValue = "50") int limit) {
         try {
-            List<SearchResult> results = searchService.search(q, limit);
+            SearchResultsWrapper results = searchService.search(q, limit);
             return ResponseEntity.ok(results);
         } catch (IOException | ParseException e) {
             return ResponseEntity.badRequest().build();
@@ -74,7 +75,7 @@ public class SearchController {
         )
     )
     @PostMapping("/fields")
-    public ResponseEntity<List<SearchResult>> searchFields(
+    public ResponseEntity<SearchResultsWrapper> searchFields(
             @RequestBody Map<String, String> fieldQueries,
             @Parameter(description = "Maximum number of results", example = "50") 
             @RequestParam(defaultValue = "50") int limit,
@@ -84,7 +85,7 @@ public class SearchController {
             BooleanClause.Occur occur = "OR".equalsIgnoreCase(operator) ? 
                 BooleanClause.Occur.SHOULD : BooleanClause.Occur.MUST;
             
-            List<SearchResult> results = searchService.searchFieldsWithOperator(
+            SearchResultsWrapper results = searchService.searchFieldsWithOperator(
                 fieldQueries, occur, limit);
             return ResponseEntity.ok(results);
         } catch (IOException | ParseException e) {

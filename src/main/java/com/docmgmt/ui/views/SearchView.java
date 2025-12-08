@@ -3,7 +3,10 @@ package com.docmgmt.ui.views;
 import com.docmgmt.model.Document;
 import com.docmgmt.search.LuceneIndexService;
 import com.docmgmt.search.SearchResult;
+import com.docmgmt.search.SearchResultsWrapper;
 import com.docmgmt.service.DocumentService;
+import com.vaadin.flow.data.provider.DataProvider;
+import com.vaadin.flow.data.provider.ListDataProvider;
 import com.docmgmt.ui.MainLayout;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -22,6 +25,7 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.radiobutton.RadioButtonGroup;
 import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,6 +53,11 @@ public class SearchView extends VerticalLayout {
     private CheckboxGroup<String> fieldSelection;
     private Grid<SearchResult> resultsGrid;
     private Span resultsCount;
+    private Select<Integer> maxResultsSelect;
+    private Select<Integer> pageSizeSelect;
+    private ListDataProvider<SearchResult> dataProvider;
+    private static final int DEFAULT_MAX_RESULTS = 100;
+    private static final int DEFAULT_PAGE_SIZE = 20;
     
     @Autowired
     public SearchView(LuceneIndexService searchService, DocumentService documentService) {
@@ -149,8 +158,31 @@ public class SearchView extends VerticalLayout {
         panel.setSizeFull();
         panel.setPadding(false);
         
+        // Max results selector
+        maxResultsSelect = new Select<>();
+        maxResultsSelect.setLabel("Max Results");
+        maxResultsSelect.setItems(100, 500, 1000, 5000, 10000);
+        maxResultsSelect.setValue(DEFAULT_MAX_RESULTS);
+        maxResultsSelect.setWidth("150px");
+        
+        // Page size selector
+        pageSizeSelect = new Select<>();
+        pageSizeSelect.setLabel("Page Size");
+        pageSizeSelect.setItems(10, 20, 50, 100, 200);
+        pageSizeSelect.setValue(DEFAULT_PAGE_SIZE);
+        pageSizeSelect.setWidth("120px");
+        pageSizeSelect.addValueChangeListener(e -> {
+            if (e.getValue() != null && dataProvider != null) {
+                resultsGrid.getDataProvider().refreshAll();
+            }
+        });
+        
         resultsCount = new Span("No search performed");
         resultsCount.getStyle().set("font-weight", "bold");
+        
+        HorizontalLayout controlsLayout = new HorizontalLayout(resultsCount, maxResultsSelect, pageSizeSelect);
+        controlsLayout.setDefaultVerticalComponentAlignment(FlexComponent.Alignment.CENTER);
+        controlsLayout.setSpacing(true);
         
         resultsGrid = new Grid<>(SearchResult.class, false);
         resultsGrid.setSizeFull();
@@ -172,7 +204,7 @@ public class SearchView extends VerticalLayout {
             }
         });
         
-        panel.add(resultsCount, resultsGrid);
+        panel.add(controlsLayout, resultsGrid);
         panel.expand(resultsGrid);
         
         return panel;
@@ -180,7 +212,7 @@ public class SearchView extends VerticalLayout {
     
     private void performSearch() {
         try {
-            List<SearchResult> results;
+            SearchResultsWrapper wrapper;
             
             if ("Simple Search".equals(searchMode.getValue())) {
                 String query = searchField.getValue();
@@ -191,7 +223,8 @@ public class SearchView extends VerticalLayout {
                     return;
                 }
                 
-                results = searchService.search(query, 100);
+                int maxResults = maxResultsSelect.getValue() != null ? maxResultsSelect.getValue() : DEFAULT_MAX_RESULTS;
+                wrapper = searchService.search(query, maxResults);
                 
             } else {
                 // Field-specific search
@@ -225,11 +258,25 @@ public class SearchView extends VerticalLayout {
                         org.apache.lucene.search.BooleanClause.Occur.SHOULD : 
                         org.apache.lucene.search.BooleanClause.Occur.MUST;
                 
-                results = searchService.searchFieldsWithOperator(fieldQueries, operator, 100);
+                int maxResults = maxResultsSelect.getValue() != null ? maxResultsSelect.getValue() : DEFAULT_MAX_RESULTS;
+                wrapper = searchService.searchFieldsWithOperator(fieldQueries, operator, maxResults);
             }
             
-            resultsGrid.setItems(results);
-            resultsCount.setText(results.size() + " result(s) found");
+            // Setup data provider with pagination
+            List<SearchResult> results = wrapper.getResults();
+            dataProvider = DataProvider.ofCollection(results);
+            resultsGrid.setDataProvider(dataProvider);
+            
+            // Set page size
+            int pageSize = pageSizeSelect.getValue() != null ? pageSizeSelect.getValue() : DEFAULT_PAGE_SIZE;
+            resultsGrid.setPageSize(pageSize);
+            
+            // Update count with total hits
+            String countText = String.format("%,d result(s) found", wrapper.getTotalHits());
+            if (wrapper.hasMoreResults()) {
+                countText += String.format(" (showing first %,d)", results.size());
+            }
+            resultsCount.setText(countText);
             
             if (results.isEmpty()) {
                 Notification.show("No results found", 

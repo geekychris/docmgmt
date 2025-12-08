@@ -51,6 +51,7 @@ public class DocumentDetailView extends VerticalLayout implements HasUrlParamete
     private boolean editMode = false;
     private Button editToggleButton;
     private Checkbox editModeCheckbox;
+    private static final int CONTENT_PAGE_SIZE = 10;
     
     @Autowired
     public DocumentDetailView(DocumentService documentService, ContentService contentService, UserService userService) {
@@ -411,6 +412,9 @@ public class DocumentDetailView extends VerticalLayout implements HasUrlParamete
         // Configure content grid
         contentGrid = new Grid<>(Content.class, false);
         contentGrid.setSizeFull();
+        
+        // Enable pagination for content
+        contentGrid.setPageSize(CONTENT_PAGE_SIZE);
         
         contentGrid.addColumn(Content::getName).setHeader("File Name").setAutoWidth(true).setFlexGrow(1);
         contentGrid.addColumn(Content::getContentType).setHeader("Type").setAutoWidth(true);

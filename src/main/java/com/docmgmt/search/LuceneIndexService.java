@@ -174,11 +174,11 @@ public class LuceneIndexService {
      * Search across all fields
      * @param queryText the search query
      * @param maxResults maximum number of results to return
-     * @return list of matching document IDs
+     * @return wrapper containing results and total hit count
      * @throws IOException if search fails
      * @throws ParseException if query parsing fails
      */
-    public List<SearchResult> search(String queryText, int maxResults) throws IOException, ParseException {
+    public SearchResultsWrapper search(String queryText, int maxResults) throws IOException, ParseException {
         QueryParser parser = new QueryParser(FIELD_ALL, analyzer);
         Query query = parser.parse(queryText);
         
@@ -189,11 +189,11 @@ public class LuceneIndexService {
      * Search in specific fields
      * @param fieldQueries map of field name to query text
      * @param maxResults maximum number of results to return
-     * @return list of matching document IDs
+     * @return wrapper containing results and total hit count
      * @throws IOException if search fails
      * @throws ParseException if query parsing fails
      */
-    public List<SearchResult> searchFields(Map<String, String> fieldQueries, int maxResults) 
+    public SearchResultsWrapper searchFields(Map<String, String> fieldQueries, int maxResults) 
             throws IOException, ParseException {
         
         BooleanQuery.Builder queryBuilder = new BooleanQuery.Builder();
@@ -217,11 +217,11 @@ public class LuceneIndexService {
      * @param fieldQueries map of field name to query text
      * @param operator AND or OR logic between fields
      * @param maxResults maximum number of results to return
-     * @return list of matching document IDs
+     * @return wrapper containing results and total hit count
      * @throws IOException if search fails
      * @throws ParseException if query parsing fails
      */
-    public List<SearchResult> searchFieldsWithOperator(Map<String, String> fieldQueries, 
+    public SearchResultsWrapper searchFieldsWithOperator(Map<String, String> fieldQueries, 
                                                         BooleanClause.Occur operator,
                                                         int maxResults) throws IOException, ParseException {
         
@@ -246,11 +246,11 @@ public class LuceneIndexService {
      * @param queryText the search query
      * @param fields fields to search in
      * @param maxResults maximum number of results to return
-     * @return list of matching document IDs
+     * @return wrapper containing results and total hit count
      * @throws IOException if search fails
      * @throws ParseException if query parsing fails
      */
-    public List<SearchResult> searchMultipleFields(String queryText, String[] fields, int maxResults) 
+    public SearchResultsWrapper searchMultipleFields(String queryText, String[] fields, int maxResults) 
             throws IOException, ParseException {
         
         MultiFieldQueryParser parser = new MultiFieldQueryParser(fields, analyzer);
@@ -260,15 +260,17 @@ public class LuceneIndexService {
     }
     
     /**
-     * Execute a Lucene query and return results
+     * Execute a Lucene query and return results with total hit count
      */
-    private List<SearchResult> executeSearch(Query query, int maxResults) throws IOException {
+    private SearchResultsWrapper executeSearch(Query query, int maxResults) throws IOException {
         List<SearchResult> results = new ArrayList<>();
+        long totalHits = 0;
         
         try (IndexReader reader = DirectoryReader.open(directory)) {
             IndexSearcher searcher = new IndexSearcher(reader);
             
             TopDocs topDocs = searcher.search(query, maxResults);
+            totalHits = topDocs.totalHits.value;
             
             for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
                 org.apache.lucene.document.Document doc = searcher.doc(scoreDoc.doc);
@@ -287,9 +289,9 @@ public class LuceneIndexService {
             }
         }
         
-        logger.debug("Search query '{}' returned {} results", query, results.size());
+        logger.debug("Search query '{}' returned {} results out of {} total hits", query, results.size(), totalHits);
         
-        return results;
+        return new SearchResultsWrapper(results, totalHits);
     }
     
     /**

@@ -43,10 +43,16 @@ import java.io.IOException;
 import com.vaadin.flow.data.binder.BeanValidationBinder;
 import com.vaadin.flow.data.binder.Binder;
 import com.vaadin.flow.data.converter.StringToIntegerConverter;
+import com.vaadin.flow.data.provider.CallbackDataProvider;
 import com.vaadin.flow.data.provider.DataProvider;
-import com.vaadin.flow.data.provider.ListDataProvider;
+import com.vaadin.flow.data.provider.Query;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 import com.vaadin.flow.data.value.ValueChangeMode;
+import com.vaadin.flow.component.select.Select;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import jakarta.annotation.PostConstruct;
@@ -86,7 +92,9 @@ public class DocumentView extends VerticalLayout {
     private H2 contentPanelTitle;
     private Checkbox showAllVersionsCheckbox;
     
-    private ListDataProvider<Document> dataProvider;
+    private CallbackDataProvider<Document, Void> dataProvider;
+    private static final int DEFAULT_PAGE_SIZE = 50; // Transparent lazy loading batch size
+    private boolean currentFilterValue = false; // Tracks "Show All Versions" checkbox
     
     @Autowired
     public DocumentView(DocumentService documentService, ContentService contentService, 
@@ -203,22 +211,16 @@ public class DocumentView extends VerticalLayout {
     }
     
     private void filterGrid() {
-        if (dataProvider != null) {
-            dataProvider.setFilter(document -> {
-                String filter = filterText.getValue().toLowerCase();
-                if (filter.isEmpty()) {
-                    return true;
-                }
-                
-                boolean nameMatches = document.getName().toLowerCase().contains(filter);
-                boolean descMatches = document.getDescription() != null && 
-                                     document.getDescription().toLowerCase().contains(filter);
-                boolean tagsMatch = document.getTags() != null && 
-                                   document.getTags().stream()
-                                   .anyMatch(tag -> tag.toLowerCase().contains(filter));
-                
-                return nameMatches || descMatches || tagsMatch;
-            });
+        // For lazy loading, filter needs to be implemented server-side
+        // For now, refresh the data when filter changes
+        // A full implementation would pass the filter to the backend query
+        if (dataProvider != null && filterText != null) {
+            String filter = filterText.getValue();
+            if (filter != null && !filter.trim().isEmpty()) {
+                Notification.show("Client-side filtering not supported with lazy loading. Use search page for filtering.", 
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_CONTRAST);
+            }
         }
     }
     
@@ -983,25 +985,47 @@ public class DocumentView extends VerticalLayout {
     }
     
     /**
-     * Updates the document list in the grid by fetching fresh data from the service.
+     * Updates the document list in the grid by configuring lazy loading data provider.
      * This method is called after CRUD operations to refresh the UI.
      */
     private void updateList() {
         try {
-            // Get documents based on checkbox state
-            List<Document> documents;
-            if (showAllVersionsCheckbox.getValue()) {
-                documents = documentService.findAll();
-            } else {
-                documents = documentService.findAllLatestVersions();
-            }
+            currentFilterValue = showAllVersionsCheckbox.getValue();
             
-            // Update the data provider
-            dataProvider = DataProvider.ofCollection(documents);
+            // Create a lazy loading data provider
+            dataProvider = DataProvider.fromCallbacks(
+                // Fetch callback - called when grid needs data
+                query -> {
+                    int offset = query.getOffset();
+                    int limit = query.getLimit();
+                    int page = offset / limit;
+                    
+                    Pageable pageable = PageRequest.of(page, limit, Sort.by(Sort.Direction.DESC, "modifiedAt"));
+                    
+                    Page<Document> documentPage;
+                    if (currentFilterValue) {
+                        documentPage = documentService.findAllPaginated(pageable);
+                    } else {
+                        documentPage = documentService.findAllLatestVersionsPaginated(pageable);
+                    }
+                    
+                    // Collections are already initialized in the service method
+                    return documentPage.getContent().stream();
+                },
+                // Count callback - called to determine total number of items
+                query -> {
+                    if (currentFilterValue) {
+                        return (int) documentService.count();
+                    } else {
+                        return (int) documentService.countLatestVersions();
+                    }
+                }
+            );
+            
             grid.setDataProvider(dataProvider);
             
-            // Apply current filter if any
-            filterGrid();
+            // Set page size for transparent lazy loading
+            grid.setPageSize(DEFAULT_PAGE_SIZE);
             
             // Reset button states since selection is cleared
             editButton.setEnabled(false);
