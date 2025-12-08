@@ -114,6 +114,7 @@
     
     <build>
         <plugins>
+            <!-- Main Spring Boot plugin for web application JAR -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
@@ -125,6 +126,28 @@
                         </exclude>
                     </excludes>
                 </configuration>
+                <executions>
+                    <execution>
+                        <id>build-web-app</id>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>web</classifier>
+                            <mainClass>com.docmgmt.DocumentManagementApplication</mainClass>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>build-cli</id>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>cli</classifier>
+                            <mainClass>com.docmgmt.cli.StandaloneDocumentImportCli</mainClass>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>com.vaadin</groupId>
