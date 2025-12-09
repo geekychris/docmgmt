@@ -18,6 +18,11 @@ The document management system now automatically reindexes documents whenever th
    - Ensures all related data (content, tags, etc.) is persisted before indexing
    - Prevents indexing failures due to incomplete data
 
+3. **Lazy Loading Handling**
+   - Document is reloaded from the database in a fresh transaction during indexing
+   - Ensures all lazy-loaded relationships (FileStore, Content, etc.) are accessible
+   - Prevents `LazyInitializationException` errors when accessing file storage
+
 ### How It Works
 
 1. **On Document Creation (`@PostPersist`)**

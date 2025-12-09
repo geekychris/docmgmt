@@ -6,6 +6,7 @@ import com.docmgmt.service.ContentService;
 import com.docmgmt.service.DocumentService;
 import com.docmgmt.service.FileStoreService;
 import com.docmgmt.service.UserService;
+import com.docmgmt.transformer.TransformerRegistry;
 import com.docmgmt.ui.MainLayout;
 import com.docmgmt.ui.util.DocumentFieldRenderer;
 import com.vaadin.flow.component.button.Button;
@@ -80,6 +81,7 @@ public class DocumentView extends VerticalLayout {
     private final ContentService contentService;
     private final FileStoreService fileStoreService;
     private final UserService userService;
+    private final TransformerRegistry transformerRegistry;
     
     private Grid<Document> grid;
     private TextField filterText;
@@ -104,11 +106,13 @@ public class DocumentView extends VerticalLayout {
     
     @Autowired
     public DocumentView(DocumentService documentService, ContentService contentService, 
-                       FileStoreService fileStoreService, UserService userService) {
+                       FileStoreService fileStoreService, UserService userService,
+                       TransformerRegistry transformerRegistry) {
         this.documentService = documentService;
         this.contentService = contentService;
         this.fileStoreService = fileStoreService;
         this.userService = userService;
+        this.transformerRegistry = transformerRegistry;
         
         addClassName("document-view");
         setSizeFull();
@@ -892,8 +896,8 @@ public class DocumentView extends VerticalLayout {
             
             HorizontalLayout actions = new HorizontalLayout(viewButton, downloadButton);
             
-            // Add transform button for primary content
-            if (content.isPrimary()) {
+            // Add transform button for primary content that can be transformed
+            if (content.isPrimary() && transformerRegistry.findTransformer(content).isPresent()) {
                 Button transformButton = new Button(new Icon(VaadinIcon.MAGIC));
                 transformButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY, ButtonVariant.LUMO_SUCCESS);
                 transformButton.addClickListener(e -> transformContent(content));

@@ -2,6 +2,7 @@ package com.docmgmt.listener;
 
 import com.docmgmt.model.Document;
 import com.docmgmt.search.LuceneIndexService;
+import com.docmgmt.service.DocumentService;
 import jakarta.persistence.PostPersist;
 import jakarta.persistence.PostRemove;
 import jakarta.persistence.PostUpdate;
@@ -25,6 +26,7 @@ public class DocumentIndexListener {
     private static final Logger logger = LoggerFactory.getLogger(DocumentIndexListener.class);
     
     private static LuceneIndexService indexService;
+    private static DocumentService documentService;
     
     /**
      * Spring-managed setter for dependency injection
@@ -33,6 +35,14 @@ public class DocumentIndexListener {
     @Autowired
     public void setIndexService(LuceneIndexService indexService) {
         DocumentIndexListener.indexService = indexService;
+    }
+    
+    /**
+     * Spring-managed setter for document service dependency injection
+     */
+    @Autowired
+    public void setDocumentService(DocumentService documentService) {
+        DocumentIndexListener.documentService = documentService;
     }
     
     /**
@@ -73,33 +83,40 @@ public class DocumentIndexListener {
     /**
      * Helper method to reindex a document
      * Defers indexing until after transaction commit to ensure all data is persisted
+     * Uses document ID instead of entity to avoid lazy initialization issues
      */
     private void reindexDocument(Document document, String operation) {
-        if (indexService != null && document.getId() != null) {
+        if (indexService != null && documentService != null && document.getId() != null) {
+            final Long documentId = document.getId();
+            final String documentName = document.getName();
+            
             // Register a synchronization to index after transaction commit
             if (TransactionSynchronizationManager.isSynchronizationActive()) {
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
                         try {
-                            indexService.indexDocument(document);
+                            // Reload the document in a new transaction to ensure all lazy relationships are available
+                            Document freshDocument = documentService.findById(documentId);
+                            indexService.indexDocument(freshDocument);
                             logger.debug("Document automatically reindexed after {}: {} (ID: {})", 
-                                operation, document.getName(), document.getId());
-                        } catch (IOException e) {
+                                operation, documentName, documentId);
+                        } catch (Exception e) {
                             logger.error("Failed to reindex document after {}: {} (ID: {})", 
-                                operation, document.getName(), document.getId(), e);
+                                operation, documentName, documentId, e);
                         }
                     }
                 });
             } else {
                 // Fallback if no transaction is active (shouldn't happen in normal usage)
                 try {
-                    indexService.indexDocument(document);
+                    Document freshDocument = documentService.findById(documentId);
+                    indexService.indexDocument(freshDocument);
                     logger.debug("Document automatically reindexed after {} (no transaction): {} (ID: {})", 
-                        operation, document.getName(), document.getId());
-                } catch (IOException e) {
+                        operation, documentName, documentId);
+                } catch (Exception e) {
                     logger.error("Failed to reindex document after {} (no transaction): {} (ID: {})", 
-                        operation, document.getName(), document.getId(), e);
+                        operation, documentName, documentId, e);
                 }
             }
         }

@@ -7,6 +7,7 @@ import com.docmgmt.service.DocumentService;
 import com.docmgmt.service.FileStoreService;
 import com.docmgmt.service.FolderService;
 import com.docmgmt.service.UserService;
+import com.docmgmt.transformer.TransformerRegistry;
 import com.docmgmt.ui.MainLayout;
 import com.docmgmt.ui.util.DocumentFieldRenderer;
 import com.vaadin.flow.component.button.Button;
@@ -61,6 +62,7 @@ public class FolderView extends VerticalLayout {
     private final UserService userService;
     private final ContentService contentService;
     private final FileStoreService fileStoreService;
+    private final TransformerRegistry transformerRegistry;
     
     private TreeGrid<Folder> folderTree;
     private Grid<SysObject> itemsGrid;
@@ -80,12 +82,14 @@ public class FolderView extends VerticalLayout {
     
     @Autowired
     public FolderView(FolderService folderService, DocumentService documentService, UserService userService, 
-                     ContentService contentService, FileStoreService fileStoreService) {
+                     ContentService contentService, FileStoreService fileStoreService,
+                     TransformerRegistry transformerRegistry) {
         this.folderService = folderService;
         this.documentService = documentService;
         this.userService = userService;
         this.contentService = contentService;
         this.fileStoreService = fileStoreService;
+        this.transformerRegistry = transformerRegistry;
         
         addClassName("folder-view");
         setSizeFull();
@@ -784,9 +788,16 @@ public class FolderView extends VerticalLayout {
     }
     
     /**
-     * Open document detail dialog with content viewing
+     * Open document detail dialog with content viewing and editing
      */
     private void openDocumentDetailDialog(Document document) {
+        openDocumentDetailDialog(document, false);
+    }
+    
+    /**
+     * Open document detail dialog with content viewing and optional edit mode
+     */
+    private void openDocumentDetailDialog(Document document, boolean editMode) {
         // Reload the document with contents eagerly loaded
         Document reloadedDoc = documentService.findById(document.getId());
         
@@ -814,30 +825,112 @@ public class FolderView extends VerticalLayout {
         versionPicker.addValueChangeListener(e -> {
             if (e.getValue() != null && !e.getValue().getId().equals(reloadedDoc.getId())) {
                 dialog.close();
-                openDocumentDetailDialog(e.getValue());
+                openDocumentDetailDialog(e.getValue(), editMode);
             }
         });
+        
+        // Edit mode toggle
+        Checkbox editModeCheckbox = new Checkbox("Edit Mode");
+        editModeCheckbox.setValue(editMode);
+        editModeCheckbox.addValueChangeListener(e -> {
+            dialog.close();
+            openDocumentDetailDialog(reloadedDoc, e.getValue());
+        });
+        
+        HorizontalLayout versionRow = new HorizontalLayout(versionPicker, editModeCheckbox);
+        versionRow.setDefaultVerticalComponentAlignment(FlexComponent.Alignment.CENTER);
+        versionRow.setSpacing(true);
+        versionRow.setWidthFull();
         
         // Create dynamic container for document fields
         VerticalLayout documentFieldsContainer = new VerticalLayout();
         documentFieldsContainer.setPadding(false);
         documentFieldsContainer.setSpacing(true);
         
-        // Use DocumentFieldRenderer to show all fields (base + type-specific)
-        DocumentFieldRenderer.renderReadOnlyFields(reloadedDoc, documentFieldsContainer);
+        if (editMode) {
+            // Create editable form
+            FormLayout formLayout = new FormLayout();
+            
+            TextField nameField = new TextField("Name");
+            nameField.setValue(reloadedDoc.getName() != null ? reloadedDoc.getName() : "");
+            nameField.setWidthFull();
+            nameField.addValueChangeListener(e -> reloadedDoc.setName(e.getValue()));
+            
+            TextArea descriptionField = new TextArea("Description");
+            descriptionField.setValue(reloadedDoc.getDescription() != null ? reloadedDoc.getDescription() : "");
+            descriptionField.setWidthFull();
+            descriptionField.setHeight("100px");
+            descriptionField.addValueChangeListener(e -> reloadedDoc.setDescription(e.getValue()));
+            
+            TextField keywordsField = new TextField("Keywords");
+            keywordsField.setValue(reloadedDoc.getKeywords() != null ? reloadedDoc.getKeywords() : "");
+            keywordsField.setWidthFull();
+            keywordsField.addValueChangeListener(e -> reloadedDoc.setKeywords(e.getValue()));
+            
+            TextArea tagsField = new TextArea("Tags (comma separated)");
+            if (reloadedDoc.getTags() != null && !reloadedDoc.getTags().isEmpty()) {
+                tagsField.setValue(String.join(", ", reloadedDoc.getTags()));
+            }
+            tagsField.setWidthFull();
+            tagsField.setHeight("80px");
+            tagsField.addValueChangeListener(e -> {
+                if (e.getValue() == null || e.getValue().trim().isEmpty()) {
+                    reloadedDoc.setTags(new java.util.HashSet<>());
+                } else {
+                    java.util.Set<String> tags = java.util.Arrays.stream(e.getValue().split(","))
+                        .map(String::trim)
+                        .filter(tag -> !tag.isEmpty())
+                        .collect(java.util.stream.Collectors.toSet());
+                    reloadedDoc.setTags(tags);
+                }
+            });
+            
+            ComboBox<User> ownerCombo = new ComboBox<>("Owner");
+            ownerCombo.setItems(userService.findAll());
+            ownerCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
+            ownerCombo.setValue(reloadedDoc.getOwner());
+            ownerCombo.setWidthFull();
+            ownerCombo.addValueChangeListener(e -> reloadedDoc.setOwner(e.getValue()));
+            
+            MultiSelectComboBox<User> authorsCombo = new MultiSelectComboBox<>("Authors");
+            authorsCombo.setItems(userService.findAll());
+            authorsCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
+            if (reloadedDoc.getAuthors() != null) {
+                authorsCombo.setValue(reloadedDoc.getAuthors());
+            }
+            authorsCombo.setWidthFull();
+            authorsCombo.addValueChangeListener(e -> {
+                reloadedDoc.getAuthors().clear();
+                if (e.getValue() != null) {
+                    reloadedDoc.getAuthors().addAll(e.getValue());
+                }
+            });
+            
+            formLayout.add(nameField, descriptionField, keywordsField, tagsField, ownerCombo, authorsCombo);
+            
+            // Add type-specific editable fields using DocumentFieldRenderer
+            DocumentFieldRenderer.renderEditableFields(reloadedDoc, formLayout, ownerCombo, authorsCombo, userService.findAll());
+            
+            formLayout.setResponsiveSteps(new FormLayout.ResponsiveStep("0", 1));
+            
+            documentFieldsContainer.add(formLayout);
+        } else {
+            // Use DocumentFieldRenderer to show all fields (base + type-specific)
+            DocumentFieldRenderer.renderReadOnlyFields(reloadedDoc, documentFieldsContainer);
+        }
         
         // Add version info
-        HorizontalLayout versionRow = new HorizontalLayout();
-        versionRow.setWidthFull();
-        versionRow.setSpacing(true);
+        HorizontalLayout versionInfoRow = new HorizontalLayout();
+        versionInfoRow.setWidthFull();
+        versionInfoRow.setSpacing(true);
         Span versionLabel = new Span("Version:");
         versionLabel.getStyle()
             .set("font-weight", "bold")
             .set("min-width", "150px")
             .set("color", "var(--lumo-secondary-text-color)");
         Span versionValue = new Span(reloadedDoc.getMajorVersion() + "." + reloadedDoc.getMinorVersion());
-        versionRow.add(versionLabel, versionValue);
-        documentFieldsContainer.add(versionRow);
+        versionInfoRow.add(versionLabel, versionValue);
+        documentFieldsContainer.add(versionInfoRow);
         
         // Content list
         H3 contentTitle = new H3("Content Objects");
@@ -953,15 +1046,43 @@ public class FolderView extends VerticalLayout {
         versionButtons.setSpacing(true);
         
         // Dialog buttons
-        Button closeButton = new Button("Close", e -> dialog.close());
-        closeButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-        
-        HorizontalLayout buttons = new HorizontalLayout(closeButton);
+        HorizontalLayout buttons;
+        if (editMode) {
+            Button saveButton = new Button("Save Changes", new Icon(VaadinIcon.CHECK), e -> {
+                try {
+                    documentService.save(reloadedDoc);
+                    Notification.show("Document saved successfully", 
+                        3000, Notification.Position.BOTTOM_START)
+                        .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                    refreshFolderContents();
+                    dialog.close();
+                    // Optionally reopen in view mode
+                    openDocumentDetailDialog(reloadedDoc, false);
+                } catch (Exception ex) {
+                    Notification.show("Failed to save document: " + ex.getMessage(), 
+                        3000, Notification.Position.BOTTOM_START)
+                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                }
+            });
+            saveButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+            
+            Button cancelButton = new Button("Cancel", e -> {
+                dialog.close();
+                openDocumentDetailDialog(document, false);
+            });
+            
+            buttons = new HorizontalLayout(cancelButton, saveButton);
+        } else {
+            Button closeButton = new Button("Close", e -> dialog.close());
+            closeButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+            
+            buttons = new HorizontalLayout(closeButton);
+        }
         buttons.setJustifyContentMode(FlexComponent.JustifyContentMode.END);
         buttons.setWidthFull();
         
         VerticalLayout layout = new VerticalLayout(
-            title, versionPicker, new Hr(), 
+            title, versionRow, new Hr(), 
             documentFieldsContainer,
             new Hr(),
             contentTitle,
@@ -1099,7 +1220,7 @@ public class FolderView extends VerticalLayout {
     }
     
     /**
-     * Transform selected document's PDF content to text
+     * Transform selected document's primary content to text
      */
     private void transformSelectedToText() {
         itemsGrid.getSelectedItems().stream()
@@ -1114,30 +1235,30 @@ public class FolderView extends VerticalLayout {
                     reloadedDoc.getContents().size(); // Force init
                 }
                 
-                // Find PDF content
-                java.util.List<com.docmgmt.model.Content> pdfContents = reloadedDoc.getContents().stream()
-                    .filter(c -> "application/pdf".equals(c.getContentType()) && c.isPrimary())
+                // Find transformable primary content
+                java.util.List<com.docmgmt.model.Content> transformableContents = reloadedDoc.getContents().stream()
+                    .filter(c -> c.isPrimary() && transformerRegistry.findTransformer(c).isPresent())
                     .toList();
                 
-                if (pdfContents.isEmpty()) {
-                    Notification.show("No PDF content found in this document", 
+                if (transformableContents.isEmpty()) {
+                    Notification.show("No transformable content found in this document", 
                         3000, Notification.Position.BOTTOM_START)
                         .addThemeVariants(NotificationVariant.LUMO_WARNING);
                     return;
                 }
                 
-                // Transform each PDF
+                // Transform each content
                 int success = 0;
                 int failed = 0;
                 StringBuilder errors = new StringBuilder();
                 
-                for (com.docmgmt.model.Content pdfContent : pdfContents) {
+                for (com.docmgmt.model.Content content : transformableContents) {
                     try {
-                        contentService.transformAndAddRendition(pdfContent.getId(), "text/plain");
+                        contentService.transformAndAddRendition(content.getId(), "text/plain");
                         success++;
                     } catch (Exception e) {
-                        logger.warn("Failed to transform content {} in document {}: {}", 
-                            pdfContent.getId(), document.getName(), e.getMessage());
+                        logger.warn("Failed to transform content {} ({}) in document {}: {}", 
+                            content.getId(), content.getContentType(), document.getName(), e.getMessage());
                         failed++;
                         if (errors.length() < 200) { // Limit error message length
                             errors.append("\n- ").append(e.getMessage());
@@ -1146,13 +1267,13 @@ public class FolderView extends VerticalLayout {
                 }
                 
                 if (success > 0) {
-                    Notification.show("Transformed " + success + " PDF(s) to text", 
+                    Notification.show("Transformed " + success + " content item(s) to text", 
                         3000, Notification.Position.BOTTOM_START)
                         .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
                 }
                 
                 if (failed > 0) {
-                    String message = "Failed to transform " + failed + " PDF(s)";
+                    String message = "Failed to transform " + failed + " content item(s)";
                     if (errors.length() > 0) {
                         message += errors.toString();
                     }
@@ -1164,7 +1285,7 @@ public class FolderView extends VerticalLayout {
     }
     
     /**
-     * Transform all PDFs in the current folder and all subfolders recursively
+     * Transform all transformable content in the current folder and all subfolders recursively
      */
     private void transformFolderRecursively() {
         if (currentFolder == null) {
@@ -1176,7 +1297,7 @@ public class FolderView extends VerticalLayout {
         confirmDialog.setHeaderTitle("Transform Folder Recursively");
         
         VerticalLayout content = new VerticalLayout();
-        content.add(new Span("This will transform all PDF documents in \"" + currentFolder.getName() + 
+        content.add(new Span("This will transform all transformable content in \"" + currentFolder.getName() + 
             "\" and all subfolders to text renditions."));
         content.add(new Span("This may take a while for large folders."));
         
@@ -1197,7 +1318,7 @@ public class FolderView extends VerticalLayout {
     }
     
     /**
-     * Recursively transform all PDFs in a folder and its subfolders
+     * Recursively transform all transformable content in a folder and its subfolders
      */
     private void performRecursiveTransform(Folder folder) {
         Notification.show("Starting transformation of folder: " + folder.getName(), 
@@ -1213,16 +1334,16 @@ public class FolderView extends VerticalLayout {
                 // Update UI from UI thread
                 getUI().ifPresent(ui -> ui.access(() -> {
                     if (counts[0] > 0) {
-                        Notification.show("Successfully transformed " + counts[0] + " PDF(s) to text" +
+                        Notification.show("Successfully transformed " + counts[0] + " content item(s) to text" +
                             (counts[1] > 0 ? " (" + counts[1] + " failed)" : ""), 
                             5000, Notification.Position.BOTTOM_START)
                             .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
                     } else if (counts[1] > 0) {
-                        Notification.show("Failed to transform " + counts[1] + " PDF(s)", 
+                        Notification.show("Failed to transform " + counts[1] + " content item(s)", 
                             3000, Notification.Position.BOTTOM_START)
                             .addThemeVariants(NotificationVariant.LUMO_ERROR);
                     } else {
-                        Notification.show("No PDFs found to transform", 
+                        Notification.show("No transformable content found", 
                             3000, Notification.Position.BOTTOM_START)
                             .addThemeVariants(NotificationVariant.LUMO_CONTRAST);
                     }
@@ -1239,7 +1360,7 @@ public class FolderView extends VerticalLayout {
     }
     
     /**
-     * Helper method to recursively transform PDFs in a folder
+     * Helper method to recursively transform content in a folder
      */
     private void transformFolderRecursive(Folder folder, int[] counts) {
         // Reload folder with items
@@ -1255,17 +1376,18 @@ public class FolderView extends VerticalLayout {
                     if (doc.getContents() != null) {
                         doc.getContents().size(); // Force init
                         
-                        // Find and transform PDF content
+                        // Find and transform any transformable content
                         for (com.docmgmt.model.Content content : doc.getContents()) {
-                            if ("application/pdf".equals(content.getContentType()) && content.isPrimary()) {
+                            if (content.isPrimary() && transformerRegistry.findTransformer(content).isPresent()) {
                                 try {
                                     contentService.transformAndAddRendition(content.getId(), "text/plain");
                                     counts[0]++;
-                                    logger.info("Transformed PDF in document: {}", doc.getName());
+                                    logger.info("Transformed {} content in document: {}", 
+                                        content.getContentType(), doc.getName());
                                 } catch (Exception e) {
                                     counts[1]++;
-                                    logger.warn("Failed to transform PDF in document {}: {}", 
-                                        doc.getName(), e.getMessage());
+                                    logger.warn("Failed to transform {} content in document {}: {}", 
+                                        content.getContentType(), doc.getName(), e.getMessage());
                                 }
                             }
                         }

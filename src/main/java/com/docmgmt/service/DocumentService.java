@@ -29,23 +29,8 @@ public class DocumentService extends AbstractSysObjectService<Document, Document
     @Transactional(readOnly = true)
     public List<Document> findAll() {
         List<Document> documents = super.findAll();
-        // Initialize tags, contents collections, owner, authors, and parent version
-        documents.forEach(doc -> {
-            doc.getTags().size();
-            if (doc.getContents() != null) {
-                doc.getContents().size();
-            }
-            if (doc.getOwner() != null) {
-                doc.getOwner().getName();
-            }
-            if (doc.getAuthors() != null) {
-                doc.getAuthors().size();
-            }
-            // Touch parent version to initialize it
-            if (doc.getParentVersion() != null) {
-                doc.getParentVersion().getName();
-            }
-        });
+        // Initialize all lazy-loaded relationships
+        documents.forEach(this::initializeDocument);
         return documents;
     }
     
@@ -58,21 +43,8 @@ public class DocumentService extends AbstractSysObjectService<Document, Document
     @Transactional(readOnly = true)
     public Document findById(Long id) {
         Document document = super.findById(id);
-        // Initialize tags, contents collections, owner, authors, and parent version
-        document.getTags().size();
-        if (document.getContents() != null) {
-            document.getContents().size();
-        }
-        if (document.getOwner() != null) {
-            document.getOwner().getName();
-        }
-        if (document.getAuthors() != null) {
-            document.getAuthors().size();
-        }
-        // Touch parent version to initialize it
-        if (document.getParentVersion() != null) {
-            document.getParentVersion().getName();
-        }
+        // Initialize all lazy-loaded relationships
+        initializeDocument(document);
         return document;
     }
     
@@ -84,23 +56,8 @@ public class DocumentService extends AbstractSysObjectService<Document, Document
     @Transactional(readOnly = true)
     public List<Document> findAllLatestVersions() {
         List<Document> documents = super.findAllLatestVersions();
-        // Initialize tags, contents collections, owner, authors, and parent version
-        documents.forEach(doc -> {
-            doc.getTags().size();
-            if (doc.getContents() != null) {
-                doc.getContents().size();
-            }
-            if (doc.getOwner() != null) {
-                doc.getOwner().getName();
-            }
-            if (doc.getAuthors() != null) {
-                doc.getAuthors().size();
-            }
-            // Touch parent version to initialize it
-            if (doc.getParentVersion() != null) {
-                doc.getParentVersion().getName();
-            }
-        });
+        // Initialize all lazy-loaded relationships
+        documents.forEach(this::initializeDocument);
         return documents;
     }
     
@@ -211,6 +168,12 @@ public class DocumentService extends AbstractSysObjectService<Document, Document
         }
         if (doc.getContents() != null) {
             doc.getContents().size();
+            // Initialize FileStore for each content object
+            doc.getContents().forEach(content -> {
+                if (content.getFileStore() != null) {
+                    content.getFileStore().getName(); // Touch to initialize proxy
+                }
+            });
         }
         if (doc.getOwner() != null) {
             doc.getOwner().getName();
