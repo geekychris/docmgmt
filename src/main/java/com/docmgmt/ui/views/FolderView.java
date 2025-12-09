@@ -9,6 +9,12 @@ import com.docmgmt.service.DocumentFieldExtractionService;
 import com.docmgmt.service.FileStoreService;
 import com.docmgmt.service.FolderService;
 import com.docmgmt.service.UserService;
+import com.docmgmt.dto.PluginInfoDTO;
+import com.docmgmt.plugin.PluginService;
+import com.docmgmt.plugin.PluginResponse;
+import com.docmgmt.plugin.PluginException;
+import com.docmgmt.ui.components.PluginExecutionDialog;
+import com.docmgmt.ui.components.PluginResultDialog;
 import com.docmgmt.transformer.TransformerRegistry;
 import com.docmgmt.ui.MainLayout;
 import com.docmgmt.ui.util.DocumentFieldRenderer;
@@ -16,6 +22,9 @@ import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
+import com.vaadin.flow.component.contextmenu.MenuItem;
+import com.vaadin.flow.component.contextmenu.SubMenu;
+import com.vaadin.flow.component.menubar.MenuBar;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.grid.Grid;
@@ -67,6 +76,7 @@ public class FolderView extends VerticalLayout {
     private final FileStoreService fileStoreService;
     private final TransformerRegistry transformerRegistry;
     private final DocumentFieldExtractionService fieldExtractionService;
+    private final PluginService pluginService;
     
     private TreeGrid<Folder> folderTree;
     private Grid<SysObject> itemsGrid;
@@ -87,7 +97,8 @@ public class FolderView extends VerticalLayout {
     @Autowired
     public FolderView(FolderService folderService, DocumentService documentService, UserService userService, 
                      ContentService contentService, FileStoreService fileStoreService,
-                     TransformerRegistry transformerRegistry, DocumentFieldExtractionService fieldExtractionService) {
+                     TransformerRegistry transformerRegistry, DocumentFieldExtractionService fieldExtractionService,
+                     PluginService pluginService) {
         this.folderService = folderService;
         this.documentService = documentService;
         this.userService = userService;
@@ -95,6 +106,7 @@ public class FolderView extends VerticalLayout {
         this.fileStoreService = fileStoreService;
         this.transformerRegistry = transformerRegistry;
         this.fieldExtractionService = fieldExtractionService;
+        this.pluginService = pluginService;
         
         addClassName("folder-view");
         setSizeFull();
@@ -1032,8 +1044,39 @@ public class FolderView extends VerticalLayout {
             openFieldExtractionDialog(reloadedDoc);
         });
         
+        // AI Plugins menu
+        MenuBar pluginsMenu = new MenuBar();
+        MenuItem pluginsMenuItem = pluginsMenu.addItem("AI Plugins");
+        SubMenu pluginsSubMenu = pluginsMenuItem.getSubMenu();
+        
+        // Load plugins and group by category
+        java.util.List<PluginInfoDTO> allPlugins = pluginService.getDetailedPluginInfo();
+        java.util.Map<String, java.util.List<PluginInfoDTO>> pluginsByCategory = new java.util.LinkedHashMap<>();
+        
+        for (PluginInfoDTO pluginInfo : allPlugins) {
+            pluginsByCategory.computeIfAbsent(pluginInfo.getCategory(), k -> new java.util.ArrayList<>()).add(pluginInfo);
+        }
+        
+        // Add categorized plugins to menu
+        for (java.util.Map.Entry<String, java.util.List<PluginInfoDTO>> entry : pluginsByCategory.entrySet()) {
+            MenuItem categoryItem = pluginsSubMenu.addItem(entry.getKey());
+            SubMenu categorySubMenu = categoryItem.getSubMenu();
+            
+            for (PluginInfoDTO pluginInfo : entry.getValue()) {
+                Icon pluginIcon = VaadinIcon.valueOf(pluginInfo.getIcon()).create();
+                MenuItem pluginItem = categorySubMenu.addItem(pluginInfo.getDescription());
+                pluginItem.addComponentAsFirst(pluginIcon);
+                pluginItem.addClickListener(evt -> {
+                    dialog.close();
+                    openPluginDialog(reloadedDoc, pluginInfo);
+                });
+            }
+        }
+        
+        pluginsMenu.setEnabled(hasTextContent);
+        
         HorizontalLayout contentToolbar = new HorizontalLayout(
-            viewContentButton, uploadContentButton, transformContentButton, extractFieldsButton);
+            viewContentButton, uploadContentButton, transformContentButton, extractFieldsButton, pluginsMenu);
         
         // Version control buttons
         Button createMajorVersionButton = new Button("Create Major Version", new Icon(VaadinIcon.PLUS_CIRCLE));
@@ -1885,5 +1928,197 @@ public class FolderView extends VerticalLayout {
         int exp = (int) (Math.log(bytes) / Math.log(1024));
         char pre = "KMGTPE".charAt(exp - 1);
         return String.format("%.1f %sB", bytes / Math.pow(1024, exp), pre);
+    }
+    
+    /**
+     * Open generic plugin execution dialog
+     */
+    private void openPluginDialog(Document document, PluginInfoDTO pluginInfo) {
+        PluginExecutionDialog pluginDialog = new PluginExecutionDialog(
+            document,
+            pluginInfo,
+            pluginService,
+            response -> {
+                // Show results
+                PluginResultDialog resultDialog = new PluginResultDialog(pluginInfo.getDescription(), response);
+                resultDialog.open();
+            }
+        );
+        pluginDialog.open();
+    }
+    
+    /**
+     * Open translate dialog for a document (DEPRECATED - use openPluginDialog instead)
+     */
+    private void openTranslateDialog(Document document) {
+        Dialog dialog = new Dialog();
+        dialog.setWidth("900px");
+        dialog.setHeight("80vh");
+        
+        H2 title = new H2("Translate: " + document.getName());
+        
+        // Target language selection
+        ComboBox<String> targetLanguageCombo = new ComboBox<>("Target Language");
+        targetLanguageCombo.setItems(
+            "English", "Spanish", "French", "German", "Italian", 
+            "Portuguese", "Russian", "Chinese", "Japanese", "Korean",
+            "Arabic", "Hindi"
+        );
+        targetLanguageCombo.setValue("English");
+        targetLanguageCombo.setWidthFull();
+        
+        VerticalLayout loadingLayout = new VerticalLayout();
+        loadingLayout.setSizeFull();
+        loadingLayout.setAlignItems(FlexComponent.Alignment.CENTER);
+        loadingLayout.setJustifyContentMode(FlexComponent.JustifyContentMode.CENTER);
+        loadingLayout.setVisible(false);
+        
+        Span loadingText = new Span("Translating document...");
+        loadingText.getStyle().set("font-size", "var(--lumo-font-size-l)");
+        loadingLayout.add(loadingText);
+        
+        // Results area
+        VerticalLayout resultsLayout = new VerticalLayout();
+        resultsLayout.setPadding(false);
+        resultsLayout.setSpacing(true);
+        resultsLayout.setVisible(false);
+        
+        Button translateButton = new Button("Translate", new Icon(VaadinIcon.GLOBE), e -> {
+            String targetLanguage = targetLanguageCombo.getValue();
+            if (targetLanguage == null) {
+                Notification.show("Please select a target language", 
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                return;
+            }
+            
+            // Show loading
+            resultsLayout.setVisible(false);
+            loadingLayout.setVisible(true);
+            
+            // Execute translation in background
+            CompletableFuture.supplyAsync(() -> {
+                try {
+                    Map<String, Object> params = Map.of("targetLanguage", targetLanguage);
+                    return pluginService.executePlugin(document.getId(), "translate", params);
+                } catch (Exception ex) {
+                    throw new RuntimeException(ex);
+                }
+            }).thenAccept(response -> {
+                // Update UI on UI thread
+                getUI().ifPresent(ui -> ui.access(() -> {
+                    loadingLayout.setVisible(false);
+                    
+                    if (response.getStatus() == PluginResponse.PluginStatus.SUCCESS) {
+                        showTranslationResults(resultsLayout, response);
+                        resultsLayout.setVisible(true);
+                    } else {
+                        Notification.show("Translation failed: " + response.getErrorMessage(), 
+                            5000, Notification.Position.BOTTOM_START)
+                            .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                    }
+                    ui.push();
+                }));
+            }).exceptionally(ex -> {
+                logger.error("Translation failed: {}", ex.getMessage(), ex);
+                getUI().ifPresent(ui -> ui.access(() -> {
+                    loadingLayout.setVisible(false);
+                    String errorMsg = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
+                    Notification.show("Translation failed: " + errorMsg, 
+                        5000, Notification.Position.BOTTOM_START)
+                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                    ui.push();
+                }));
+                return null;
+            });
+        });
+        translateButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        
+        Button closeButton = new Button("Close", e -> dialog.close());
+        
+        HorizontalLayout buttons = new HorizontalLayout(translateButton, closeButton);
+        buttons.setJustifyContentMode(FlexComponent.JustifyContentMode.END);
+        buttons.setWidthFull();
+        
+        VerticalLayout layout = new VerticalLayout(
+            title, new Hr(), targetLanguageCombo, loadingLayout, resultsLayout, new Hr(), buttons
+        );
+        layout.setPadding(true);
+        layout.setSpacing(true);
+        
+        dialog.add(layout);
+        dialog.open();
+    }
+    
+    /**
+     * Show translation results in the layout
+     */
+    private void showTranslationResults(VerticalLayout container, PluginResponse response) {
+        container.removeAll();
+        
+        // Language info
+        String originalLang = response.getData("originalLanguage");
+        String originalLangName = response.getData("originalLanguageName");
+        String targetLang = response.getData("targetLanguage");
+        String targetLangName = response.getData("targetLanguageName");
+        Boolean truncated = response.getData("truncated", false);
+        
+        HorizontalLayout languageInfo = new HorizontalLayout();
+        languageInfo.setSpacing(true);
+        languageInfo.setWidthFull();
+        
+        Span sourceInfo = new Span("Source: " + originalLangName + " (" + originalLang + ")");
+        sourceInfo.getStyle()
+            .set("font-weight", "bold")
+            .set("color", "var(--lumo-primary-text-color)");
+        
+        Icon arrowIcon = new Icon(VaadinIcon.ARROW_RIGHT);
+        arrowIcon.setColor("var(--lumo-contrast-60pct)");
+        
+        Span targetInfo = new Span("Target: " + targetLangName + " (" + targetLang + ")");
+        targetInfo.getStyle()
+            .set("font-weight", "bold")
+            .set("color", "var(--lumo-success-text-color)");
+        
+        languageInfo.add(sourceInfo, arrowIcon, targetInfo);
+        
+        if (truncated) {
+            Span truncatedWarning = new Span("⚠ Content was truncated to 4000 characters for translation");
+            truncatedWarning.getStyle()
+                .set("color", "var(--lumo-warning-text-color)")
+                .set("font-size", "var(--lumo-font-size-s)")
+                .set("font-style", "italic");
+            container.add(truncatedWarning);
+        }
+        
+        container.add(languageInfo);
+        
+        // Original content
+        H3 originalTitle = new H3("Original Content");
+        originalTitle.getStyle().set("margin-top", "20px").set("margin-bottom", "10px");
+        
+        String originalContent = response.getData("originalContent");
+        TextArea originalArea = new TextArea();
+        originalArea.setValue(originalContent != null ? originalContent : "");
+        originalArea.setWidthFull();
+        originalArea.setHeight("200px");
+        originalArea.setReadOnly(true);
+        originalArea.getStyle().set("font-family", "monospace");
+        
+        // Translated content
+        H3 translatedTitle = new H3("Translated Content");
+        translatedTitle.getStyle().set("margin-top", "20px").set("margin-bottom", "10px");
+        
+        String translatedContent = response.getData("translatedContent");
+        TextArea translatedArea = new TextArea();
+        translatedArea.setValue(translatedContent != null ? translatedContent : "");
+        translatedArea.setWidthFull();
+        translatedArea.setHeight("200px");
+        translatedArea.setReadOnly(true);
+        translatedArea.getStyle()
+            .set("font-family", "monospace")
+            .set("background-color", "var(--lumo-success-color-10pct)");
+        
+        container.add(originalTitle, originalArea, translatedTitle, translatedArea);
     }
 }
