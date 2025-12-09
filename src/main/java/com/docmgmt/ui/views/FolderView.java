@@ -40,6 +40,7 @@ import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.splitlayout.SplitLayout;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.treegrid.TreeGrid;
@@ -116,17 +117,16 @@ public class FolderView extends VerticalLayout {
         HorizontalLayout toolbar = createToolbar();
         
         // Create split view: folder tree on left, contents on right
-        HorizontalLayout mainContent = new HorizontalLayout();
+        SplitLayout mainContent = new SplitLayout();
         mainContent.setSizeFull();
+        mainContent.setOrientation(SplitLayout.Orientation.HORIZONTAL);
+        mainContent.setSplitterPosition(30); // 30% for tree, 70% for contents
         
         VerticalLayout treePanel = createTreePanel();
-        treePanel.setWidth("40%");
-        
         VerticalLayout contentsPanel = createContentsPanel();
-        contentsPanel.setWidth("60%");
         
-        mainContent.add(treePanel, contentsPanel);
-        mainContent.expand(treePanel, contentsPanel);
+        mainContent.addToPrimary(treePanel);
+        mainContent.addToSecondary(contentsPanel);
         
         add(title, toolbar, mainContent);
         expand(mainContent);
@@ -196,6 +196,7 @@ public class FolderView extends VerticalLayout {
         
         folderTree.addHierarchyColumn(Folder::getName)
             .setHeader("Folder Name")
+            .setResizable(true)
             .setAutoWidth(true)
             .setFlexGrow(1);
         
@@ -204,10 +205,10 @@ public class FolderView extends VerticalLayout {
                 return folder.getItems().size() + " items";
             }
             return "0 items";
-        }).setHeader("Contents").setAutoWidth(true);
+        }).setHeader("Contents").setResizable(true).setAutoWidth(true);
         
         folderTree.addColumn(folder -> folder.getOwner() != null ? folder.getOwner().getUsername() : "-")
-            .setHeader("Owner").setAutoWidth(true);
+            .setHeader("Owner").setResizable(true).setAutoWidth(true);
         
         folderTree.addThemeVariants(GridVariant.LUMO_ROW_STRIPES);
         
@@ -274,7 +275,7 @@ public class FolderView extends VerticalLayout {
             return icon;
         }).setHeader("").setWidth("60px").setFlexGrow(0);
         
-        itemsGrid.addColumn(SysObject::getName).setHeader("Name").setAutoWidth(true).setFlexGrow(1);
+        itemsGrid.addColumn(SysObject::getName).setHeader("Name").setResizable(true).setAutoWidth(true).setFlexGrow(1);
         
         itemsGrid.addColumn(item -> {
             if (item instanceof Folder) {
@@ -284,14 +285,14 @@ public class FolderView extends VerticalLayout {
                 return doc.getDocumentType() != null ? doc.getDocumentType().toString() : "Document";
             }
             return "SysObject";
-        }).setHeader("Type").setAutoWidth(true);
+        }).setHeader("Type").setResizable(true).setAutoWidth(true);
         
         itemsGrid.addColumn(item -> 
             item.getMajorVersion() + "." + item.getMinorVersion()
-        ).setHeader("Version").setAutoWidth(true);
+        ).setHeader("Version").setResizable(true).setAutoWidth(true);
         
         itemsGrid.addColumn(item -> item.getOwner() != null ? item.getOwner().getUsername() : "-")
-            .setHeader("Owner").setAutoWidth(true);
+            .setHeader("Owner").setResizable(true).setAutoWidth(true);
         
         itemsGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES);
         
@@ -957,16 +958,16 @@ public class FolderView extends VerticalLayout {
         contentGrid.setHeight("200px");
         
         contentGrid.addColumn(content -> content.getName())
-            .setHeader("Name").setAutoWidth(true).setFlexGrow(1);
+            .setHeader("Name").setResizable(true).setAutoWidth(true).setFlexGrow(1);
         contentGrid.addColumn(content -> content.getContentType() != null ? content.getContentType() : "-")
-            .setHeader("Type").setAutoWidth(true);
+            .setHeader("Type").setResizable(true).setAutoWidth(true);
         contentGrid.addColumn(content -> content.isPrimary() ? "Primary" : "Secondary")
-            .setHeader("Rendition").setAutoWidth(true);
+            .setHeader("Rendition").setResizable(true).setAutoWidth(true);
         contentGrid.addColumn(content -> {
             if (content.isStoredInDatabase()) return "Database";
             if (content.isStoredInFileStore()) return "FileStore: " + content.getFileStore().getName();
             return "Unknown";
-        }).setHeader("Storage").setAutoWidth(true);
+        }).setHeader("Storage").setResizable(true).setAutoWidth(true);
         
         // Load content objects
         if (reloadedDoc.getContents() != null) {
@@ -1200,8 +1201,24 @@ public class FolderView extends VerticalLayout {
             byte[] contentBytes = contentService.getContentBytes(content.getId());
             String contentType = content.getContentType();
             
-            if (contentType != null && contentType.startsWith("text/")) {
-                // Display text content
+            if (contentType != null && contentType.equals("text/markdown")) {
+                // Display markdown content with rendering
+                String textContent = new String(contentBytes, java.nio.charset.StandardCharsets.UTF_8);
+                com.vaadin.flow.component.html.Div markdownDiv = new com.vaadin.flow.component.html.Div();
+                markdownDiv.getStyle()
+                    .set("padding", "20px")
+                    .set("background-color", "var(--lumo-contrast-5pct)")
+                    .set("border-radius", "4px")
+                    .set("overflow", "auto")
+                    .set("line-height", "1.6");
+                
+                // Convert markdown to HTML-like rendering using simple replacements
+                String htmlContent = renderMarkdownToHtml(textContent);
+                markdownDiv.getElement().setProperty("innerHTML", htmlContent);
+                viewerArea.add(markdownDiv);
+                
+            } else if (contentType != null && contentType.startsWith("text/")) {
+                // Display plain text content
                 String textContent = new String(contentBytes, java.nio.charset.StandardCharsets.UTF_8);
                 com.vaadin.flow.component.html.Pre pre = new com.vaadin.flow.component.html.Pre(textContent);
                 pre.getStyle()
@@ -2120,5 +2137,128 @@ public class FolderView extends VerticalLayout {
             .set("background-color", "var(--lumo-success-color-10pct)");
         
         container.add(originalTitle, originalArea, translatedTitle, translatedArea);
+    }
+    
+    /**
+     * Simple markdown to HTML converter for basic rendering
+     * Handles: headers, bold, italic, links, lists, code blocks
+     */
+    private String renderMarkdownToHtml(String markdown) {
+        if (markdown == null || markdown.isEmpty()) {
+            return "";
+        }
+        
+        StringBuilder html = new StringBuilder();
+        String[] lines = markdown.split("\n");
+        boolean inCodeBlock = false;
+        boolean inList = false;
+        
+        for (String line : lines) {
+            // Code blocks
+            if (line.trim().startsWith("```")) {
+                if (inCodeBlock) {
+                    html.append("</code></pre>");
+                    inCodeBlock = false;
+                } else {
+                    html.append("<pre style='background-color: var(--lumo-contrast-10pct); padding: 10px; border-radius: 4px; overflow-x: auto;'><code>");
+                    inCodeBlock = true;
+                }
+                continue;
+            }
+            
+            if (inCodeBlock) {
+                html.append(escapeHtml(line)).append("\n");
+                continue;
+            }
+            
+            // Close list if needed
+            if (inList && !line.trim().startsWith("-") && !line.trim().startsWith("*") && !line.trim().isEmpty()) {
+                html.append("</ul>");
+                inList = false;
+            }
+            
+            // Headers (process inline markdown in headers)
+            if (line.startsWith("# ")) {
+                html.append("<h1 style='margin-top: 20px; margin-bottom: 10px;'>").append(processInlineMarkdown(line.substring(2))).append("</h1>");
+            } else if (line.startsWith("## ")) {
+                html.append("<h2 style='margin-top: 16px; margin-bottom: 8px;'>").append(processInlineMarkdown(line.substring(3))).append("</h2>");
+            } else if (line.startsWith("### ")) {
+                html.append("<h3 style='margin-top: 12px; margin-bottom: 6px;'>").append(processInlineMarkdown(line.substring(4))).append("</h3>");
+            }
+            // Horizontal rule
+            else if (line.trim().equals("---") || line.trim().equals("***")) {
+                html.append("<hr style='border: none; border-top: 1px solid var(--lumo-contrast-20pct); margin: 16px 0;'>");
+            }
+            // Lists
+            else if (line.trim().startsWith("-") || line.trim().startsWith("*")) {
+                if (!inList) {
+                    html.append("<ul style='margin: 10px 0; padding-left: 20px;'>");
+                    inList = true;
+                }
+                String listItem = line.trim().substring(1).trim();
+                html.append("<li>").append(processInlineMarkdown(listItem)).append("</li>");
+            }
+            // Empty line
+            else if (line.trim().isEmpty()) {
+                if (inList) {
+                    html.append("</ul>");
+                    inList = false;
+                }
+                html.append("<br>");
+            }
+            // Regular paragraph
+            else {
+                html.append("<p style='margin: 8px 0;'>").append(processInlineMarkdown(line)).append("</p>");
+            }
+        }
+        
+        // Close any open tags
+        if (inCodeBlock) {
+            html.append("</code></pre>");
+        }
+        if (inList) {
+            html.append("</ul>");
+        }
+        
+        return html.toString();
+    }
+    
+    /**
+     * Process inline markdown (bold, italic, code, links)
+     */
+    private String processInlineMarkdown(String text) {
+        if (text == null) return "";
+        
+        // First escape HTML to prevent XSS
+        text = escapeHtml(text);
+        
+        // Now apply markdown transformations (working with escaped text)
+        // Bold (**text** or __text__)
+        text = text.replaceAll("\\*\\*(.+?)\\*\\*", "<strong>$1</strong>");
+        text = text.replaceAll("__(.+?)__", "<strong>$1</strong>");
+        
+        // Italic (*text* or _text_) - avoid matching ** for bold
+        text = text.replaceAll("(?<!\\*)\\*([^*]+?)\\*(?!\\*)", "<em>$1</em>");
+        text = text.replaceAll("(?<!_)_([^_]+?)_(?!_)", "<em>$1</em>");
+        
+        // Inline code (`code`)
+        text = text.replaceAll("`([^`]+)`", "<code style='background-color: var(--lumo-contrast-10pct); padding: 2px 4px; border-radius: 3px; font-family: monospace;'>$1</code>");
+        
+        // Links [text](url)
+        text = text.replaceAll("\\[([^\\]]+)\\]\\(([^\\)]+)\\)", "<a href='$2' style='color: var(--lumo-primary-color);' target='_blank'>$1</a>");
+        
+        return text;
+    }
+    
+    /**
+     * Escape HTML special characters
+     */
+    private String escapeHtml(String text) {
+        if (text == null) return "";
+        return text.replace("&", "&amp;")
+                   .replace("<", "&lt;")
+                   .replace(">", "&gt;")
+                   .replace("\"", "&quot;")
+                   .replace("'", "&#39;");
     }
 }
