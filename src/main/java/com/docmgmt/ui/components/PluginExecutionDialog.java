@@ -7,8 +7,11 @@ import com.docmgmt.plugin.PluginResponse;
 import com.docmgmt.plugin.PluginService;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.docmgmt.model.Content;
+import com.docmgmt.service.ContentService;
 import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
+import com.vaadin.flow.component.radiobutton.RadioButtonGroup;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.html.H2;
@@ -43,21 +46,27 @@ public class PluginExecutionDialog extends Dialog {
     private final PluginInfoDTO pluginInfo;
     private final Document document;
     private final PluginService pluginService;
+    private final ContentService contentService;
     private final Consumer<PluginResponse> onSuccess;
+    private final Content selectedContent;
     
     private final Map<String, Object> parameterValues = new HashMap<>();
     private final VerticalLayout contentLayout;
     private final VerticalLayout loadingLayout;
     private final Button executeButton;
-    private final Checkbox saveAsMarkdownCheckbox;
+    private final RadioButtonGroup<String> saveOptionGroup;
     
     public PluginExecutionDialog(Document document, 
                                 PluginInfoDTO pluginInfo,
                                 PluginService pluginService,
+                                ContentService contentService,
+                                Content selectedContent,
                                 Consumer<PluginResponse> onSuccess) {
         this.document = document;
         this.pluginInfo = pluginInfo;
         this.pluginService = pluginService;
+        this.contentService = contentService;
+        this.selectedContent = selectedContent;
         this.onSuccess = onSuccess;
         
         setWidth("600px");
@@ -79,20 +88,54 @@ public class PluginExecutionDialog extends Dialog {
             .set("color", "var(--lumo-secondary-text-color)")
             .set("font-size", "var(--lumo-font-size-s)");
         
+        // Content info if specific content selected
+        VerticalLayout infoLayout = new VerticalLayout();
+        infoLayout.setPadding(false);
+        infoLayout.setSpacing(false);
+        infoLayout.add(docInfo);
+        
+        if (selectedContent != null) {
+            String renditionType = selectedContent.isPrimary() ? "Primary" : "Secondary";
+            Span contentInfo = new Span(String.format("Using content: %s (%s, %s)", 
+                selectedContent.getName(), 
+                selectedContent.getContentType() != null ? selectedContent.getContentType() : "unknown",
+                renditionType));
+            contentInfo.getStyle()
+                .set("color", "var(--lumo-primary-color)")
+                .set("font-size", "var(--lumo-font-size-xs)")
+                .set("font-style", "italic");
+            infoLayout.add(contentInfo);
+        }
+        
         // Parameters form
         FormLayout parameterForm = buildParameterForm();
         
-        // Save as markdown checkbox
-        saveAsMarkdownCheckbox = new Checkbox("Save result as markdown file");
-        saveAsMarkdownCheckbox.getStyle()
-            .set("margin-top", "10px")
-            .set("font-size", "var(--lumo-font-size-s)");
+        // Save options for markdown output
+        saveOptionGroup = new RadioButtonGroup<>();
+        saveOptionGroup.setLabel("Save result as markdown");
+        saveOptionGroup.setItems("Don't save", "Save as primary content", "Save as secondary rendition");
+        saveOptionGroup.setValue("Don't save");
+        saveOptionGroup.getStyle()
+            .set("margin-top", "10px");
+        
+        // Debug: log selected content state
+        if (selectedContent == null) {
+            logger.info("PluginExecutionDialog: selectedContent is NULL - disabling secondary option");
+            saveOptionGroup.setHelperText("Primary: replaces main content. Secondary: linked to source (unavailable - no content selected).");
+            // Disable secondary option if no content selected
+            saveOptionGroup.setItemEnabledProvider(item -> !"Save as secondary rendition".equals(item));
+        } else {
+            logger.info("PluginExecutionDialog: selectedContent NOT NULL - ID: {}, Name: {}", 
+                selectedContent.getId(), selectedContent.getName());
+            logger.info("Enabling all save options including secondary rendition");
+            saveOptionGroup.setHelperText(String.format("Primary: replaces main content. Secondary: linked to '%s'.", selectedContent.getName()));
+        }
         
         // Content layout (shows form)
         contentLayout = new VerticalLayout();
         contentLayout.setPadding(false);
         contentLayout.setSpacing(true);
-        contentLayout.add(docInfo, new Hr(), parameterForm, saveAsMarkdownCheckbox);
+        contentLayout.add(infoLayout, new Hr(), parameterForm, saveOptionGroup);
         
         // Loading layout (hidden initially)
         loadingLayout = new VerticalLayout();
@@ -243,11 +286,24 @@ public class PluginExecutionDialog extends Dialog {
         loadingLayout.setVisible(true);
         executeButton.setEnabled(false);
         
-        boolean saveAsMarkdown = saveAsMarkdownCheckbox.getValue();
+        // Determine save option (must be final or effectively final for lambda)
+        final String selectedOption = saveOptionGroup.getValue();
+        final String finalSaveOption;
+        if ("Save as primary content".equals(selectedOption)) {
+            finalSaveOption = "primary";
+        } else if ("Save as secondary rendition".equals(selectedOption)) {
+            finalSaveOption = "secondary";
+        } else {
+            finalSaveOption = "none";
+        }
+        
+        final Long finalContentId = selectedContent != null ? selectedContent.getId() : null;
+        final Long finalSourceContentId = ("secondary".equals(finalSaveOption) && selectedContent != null) ? selectedContent.getId() : null;
         
         CompletableFuture.supplyAsync(() -> {
             try {
-                return pluginService.executePlugin(document.getId(), pluginInfo.getTaskName(), parameterValues, saveAsMarkdown);
+                return pluginService.executePlugin(document.getId(), pluginInfo.getTaskName(), parameterValues, 
+                    finalContentId, finalSaveOption, finalSourceContentId);
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }

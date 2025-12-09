@@ -68,6 +68,7 @@ public interface ContentRepository extends JpaRepository<Content, Long> {
            "LEFT JOIN FETCH c.fileStore " +
            "LEFT JOIN FETCH c.sysObject " +
            "LEFT JOIN FETCH c.secondaryRenditions " +
+           "LEFT JOIN FETCH c.parentRendition " +
            "WHERE c.id = :id")
     Optional<Content> findByIdWithAssociations(@Param("id") Long id);
     

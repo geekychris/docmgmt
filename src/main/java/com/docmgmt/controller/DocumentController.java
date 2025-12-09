@@ -160,7 +160,7 @@ public class DocumentController extends AbstractSysObjectController<Document, Do
             @Parameter(description = "Document ID", required = true)
             @PathVariable Long id) {
         try {
-            FieldSuggestionDTO suggestions = fieldExtractionService.extractFieldsFromDocument(id);
+            FieldSuggestionDTO suggestions = fieldExtractionService.extractFieldsFromDocument(id, null);
             return ResponseEntity.ok(suggestions);
         } catch (EntityNotFoundException e) {
             logger.error("Document not found: {}", id, e);

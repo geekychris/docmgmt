@@ -2,6 +2,7 @@ package com.docmgmt.ui.views;
 
 import com.docmgmt.dto.FieldSuggestionDTO;
 import com.docmgmt.model.*;
+import com.docmgmt.ui.components.DocumentDetailDialog;
 import com.docmgmt.model.Document.DocumentType;
 import com.docmgmt.search.LuceneIndexService;
 import com.docmgmt.service.ContentService;
@@ -831,6 +832,22 @@ public class FolderView extends VerticalLayout {
      * Open document detail dialog with content viewing and optional edit mode
      */
     private void openDocumentDetailDialog(Document document, boolean editMode) {
+        // For view mode, use the shared DocumentDetailDialog component
+        if (!editMode) {
+            DocumentDetailDialog detailDialog = new DocumentDetailDialog(
+                document,
+                documentService,
+                userService,
+                contentService,
+                pluginService,
+                similarityService,
+                fieldExtractionService
+            );
+            detailDialog.open();
+            return;
+        }
+        
+        // Edit mode uses inline dialog (for now)
         // Reload the document with contents eagerly loaded
         Document reloadedDoc = documentService.findById(document.getId());
         
@@ -1707,7 +1724,7 @@ public class FolderView extends VerticalLayout {
         // Perform extraction asynchronously using CompletableFuture
         CompletableFuture.supplyAsync(() -> {
             try {
-                return fieldExtractionService.extractFieldsFromDocument(document.getId());
+                return fieldExtractionService.extractFieldsFromDocument(document.getId(), null);
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
@@ -1974,21 +1991,12 @@ public class FolderView extends VerticalLayout {
         return String.format("%.1f %sB", bytes / Math.pow(1024, exp), pre);
     }
     
-    /**
-     * Open generic plugin execution dialog
-     */
+    // Note: openPluginDialog is now handled by DocumentDetailDialog in view mode
+    // Stub for edit mode - plugins not available in edit mode
     private void openPluginDialog(Document document, PluginInfoDTO pluginInfo) {
-        PluginExecutionDialog pluginDialog = new PluginExecutionDialog(
-            document,
-            pluginInfo,
-            pluginService,
-            response -> {
-                // Show results
-                PluginResultDialog resultDialog = new PluginResultDialog(pluginInfo.getDescription(), response);
-                resultDialog.open();
-            }
-        );
-        pluginDialog.open();
+        Notification.show("AI Plugins are not available in edit mode. Save changes and reopen in view mode.",
+            3000, Notification.Position.BOTTOM_START)
+            .addThemeVariants(NotificationVariant.LUMO_CONTRAST);
     }
     
     /**

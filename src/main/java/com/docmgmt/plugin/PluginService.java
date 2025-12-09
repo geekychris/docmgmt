@@ -37,16 +37,19 @@ public class PluginService {
     }
     
     /**
-     * Execute a plugin on a document
+     * Execute a plugin on a document with specific content and save options
      * @param documentId the document ID
      * @param taskName the plugin task name
      * @param parameters additional parameters
-     * @param saveAsMarkdown whether to save the result as markdown content
+     * @param contentId optional specific content ID to use (null for default)
+     * @param saveOption save option: "none", "primary", or "secondary"
+     * @param sourceContentId source content ID when saving as secondary rendition
      * @return the plugin response
      * @throws PluginException if execution fails
      */
     @Transactional
-    public PluginResponse executePlugin(Long documentId, String taskName, Map<String, Object> parameters, boolean saveAsMarkdown) 
+    public PluginResponse executePlugin(Long documentId, String taskName, Map<String, Object> parameters, 
+                                       Long contentId, String saveOption, Long sourceContentId) 
             throws PluginException {
         
         // Find the plugin
@@ -59,8 +62,14 @@ public class PluginService {
             throw new PluginException("Document not found: " + documentId);
         }
         
-        // Extract text content from document
-        String content = extractTextContent(document);
+        // Extract text content from document or specific content
+        String content;
+        if (contentId != null) {
+            content = extractTextFromContent(contentId);
+        } else {
+            content = extractTextContent(document);
+        }
+        
         if (content == null || content.trim().isEmpty()) {
             throw new PluginException("No text content found in document");
         }
@@ -78,27 +87,39 @@ public class PluginService {
         
         logger.info("Plugin '{}' completed with status: {}", taskName, response.getStatus());
         
-        // Save as markdown if requested
-        if (saveAsMarkdown && response.getStatus() == PluginResponse.PluginStatus.SUCCESS) {
-            saveResultAsMarkdown(document, plugin, response);
+        // Save as markdown based on save option
+        if (response.getStatus() == PluginResponse.PluginStatus.SUCCESS && saveOption != null && !"none".equals(saveOption)) {
+            saveResultAsMarkdown(document, plugin, response, saveOption, sourceContentId);
         }
         
         return response;
     }
     
     /**
-     * Convenience method for backward compatibility
+     * Convenience method for backward compatibility - no markdown save
      */
     @Transactional
     public PluginResponse executePlugin(Long documentId, String taskName, Map<String, Object> parameters) 
             throws PluginException {
-        return executePlugin(documentId, taskName, parameters, false);
+        return executePlugin(documentId, taskName, parameters, null, "none", null);
+    }
+    
+    /**
+     * Convenience method for backward compatibility - simple markdown save
+     */
+    @Transactional
+    public PluginResponse executePlugin(Long documentId, String taskName, Map<String, Object> parameters, boolean saveAsMarkdown) 
+            throws PluginException {
+        return executePlugin(documentId, taskName, parameters, null, saveAsMarkdown ? "secondary" : "none", null);
     }
     
     /**
      * Save plugin result as markdown content
+     * @param saveOption "primary" or "secondary"
+     * @param sourceContentId content ID to link to when saving as secondary
      */
-    private void saveResultAsMarkdown(Document document, DocumentPlugin plugin, PluginResponse response) {
+    private void saveResultAsMarkdown(Document document, DocumentPlugin plugin, PluginResponse response, 
+                                     String saveOption, Long sourceContentId) {
         try {
             String markdown = formatResultAsMarkdown(plugin, response);
             String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
@@ -114,8 +135,26 @@ public class PluginService {
             content.setSysObject(document);
             content.setContent(markdown.getBytes(StandardCharsets.UTF_8));
             
+            // Set primary/secondary based on save option
+            if ("primary".equals(saveOption)) {
+                content.setPrimary(true);
+                logger.info("Saving as primary content");
+            } else {
+                content.setPrimary(false);
+                // Link to source content if saving as secondary rendition
+                if (sourceContentId != null) {
+                    Content sourceContent = contentService.findById(sourceContentId);
+                    if (sourceContent != null) {
+                        content.setParentRendition(sourceContent);
+                        logger.info("Saving as secondary rendition of content: {} (ID: {})", 
+                            sourceContent.getName(), sourceContentId);
+                    }
+                }
+            }
+            
             contentService.save(content);
-            logger.info("Saved plugin result as markdown: {} ({} bytes)", filename, markdown.length());
+            logger.info("Saved plugin result as markdown: {} ({} bytes, {})", 
+                filename, markdown.length(), "primary".equals(saveOption) ? "primary" : "secondary");
             
         } catch (Exception e) {
             logger.error("Failed to save result as markdown", e);
@@ -213,7 +252,24 @@ public class PluginService {
     }
     
     /**
-     * Extract text content from document
+     * Extract text from a specific content object
+     */
+    private String extractTextFromContent(Long contentId) {
+        Content content = contentService.findById(contentId);
+        if (content == null) {
+            return null;
+        }
+        
+        // Only extract from text content
+        if (content.getContentType() == null || !content.getContentType().startsWith("text/")) {
+            return null;
+        }
+        
+        return getContentAsString(content);
+    }
+    
+    /**
+     * Extract text content from document (default behavior)
      */
     private String extractTextContent(Document document) {
         if (document.getContents() == null || document.getContents().isEmpty()) {

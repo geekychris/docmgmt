@@ -1,5 +1,6 @@
 package com.docmgmt.ui.components;
 
+import com.docmgmt.dto.FieldSuggestionDTO;
 import com.docmgmt.dto.PluginInfoDTO;
 import com.docmgmt.model.Content;
 import com.docmgmt.model.Document;
@@ -7,8 +8,9 @@ import com.docmgmt.model.User;
 import com.docmgmt.plugin.PluginResponse;
 import com.docmgmt.plugin.PluginService;
 import com.docmgmt.service.*;
-import com.docmgmt.dto.FieldSuggestionDTO;
 import com.docmgmt.ui.util.DocumentFieldRenderer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.vaadin.flow.component.Text;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -41,6 +43,8 @@ import java.util.concurrent.CompletableFuture;
  */
 public class DocumentDetailDialog extends Dialog {
     
+    private static final Logger logger = LoggerFactory.getLogger(DocumentDetailDialog.class);
+    
     private final Document document;
     private final DocumentService documentService;
     private final UserService userService;
@@ -48,6 +52,10 @@ public class DocumentDetailDialog extends Dialog {
     private final PluginService pluginService;
     private final DocumentSimilarityService similarityService;
     private final DocumentFieldExtractionService fieldExtractionService;
+    
+    // UI components that need to be refreshed
+    private Grid<Content> contentGrid;
+    private ComboBox<Content> contentSelector;
     
     public DocumentDetailDialog(Document document,
                                DocumentService documentService,
@@ -68,13 +76,28 @@ public class DocumentDetailDialog extends Dialog {
     }
     
     private void initializeDialog() {
+        logger.info("========== DocumentDetailDialog.initializeDialog() START ==========");
+        logger.info("Document ID: {}, Name: {}", document.getId(), document.getName());
+        
         setWidth("900px");
         setHeight("80vh");
         
         // Reload document with contents
         Document reloadedDoc = documentService.findById(document.getId());
+        logger.info("Reloaded document, ID: {}", reloadedDoc.getId());
         if (reloadedDoc.getContents() != null) {
             reloadedDoc.getContents().size(); // Force initialization
+        }
+        
+        // Reload content objects to ensure they're managed
+        List<Content> managedContents = new java.util.ArrayList<>();
+        if (reloadedDoc.getContents() != null) {
+            for (Content c : reloadedDoc.getContents()) {
+                Content managedContent = contentService.findById(c.getId());
+                if (managedContent != null) {
+                    managedContents.add(managedContent);
+                }
+            }
         }
         
         H2 title = new H2("Document: " + reloadedDoc.getName());
@@ -122,15 +145,70 @@ public class DocumentDetailDialog extends Dialog {
         H3 contentTitle = new H3("Content Objects");
         contentTitle.getStyle().set("margin-top", "20px").set("margin-bottom", "10px");
         
-        Grid<Content> contentGrid = new Grid<>(Content.class, false);
+        // Content selector for AI operations
+        contentSelector = new ComboBox<>("Select content for AI operations");
+        logger.info("Creating content selector. managedContents size: {}", managedContents.size());
+        
+        if (!managedContents.isEmpty()) {
+            // Filter to only text content
+            List<Content> textContents = managedContents.stream()
+                .filter(c -> c.getContentType() != null && c.getContentType().startsWith("text/"))
+                .collect(java.util.stream.Collectors.toList());
+            
+            logger.info("Text contents found: {}", textContents.size());
+            
+            if (!textContents.isEmpty()) {
+                contentSelector.setItems(textContents);
+                contentSelector.setItemLabelGenerator(c -> {
+                    String rendition;
+                    if (c.isPrimary()) {
+                        rendition = "Primary";
+                    } else if (c.getParentRendition() != null) {
+                        rendition = "Secondary (from: " + c.getParentRendition().getName() + ")";
+                    } else {
+                        rendition = "Secondary";
+                    }
+                    return String.format("%s (%s, %s)", c.getName(), c.getContentType(), rendition);
+                });
+                // Default to first text content
+                Content defaultContent = textContents.get(0);
+                contentSelector.setValue(defaultContent);
+                logger.info("Set default content - ID: {}, Name: {}", defaultContent.getId(), defaultContent.getName());
+                logger.info("ContentSelector value after set: {}", 
+                    contentSelector.getValue() != null ? contentSelector.getValue().getName() : "NULL");
+                contentSelector.setWidthFull();
+                contentSelector.getStyle().set("margin-bottom", "10px");
+            } else {
+                contentSelector.setEnabled(false);
+                contentSelector.setPlaceholder("No text content available");
+                contentSelector.setWidthFull();
+                contentSelector.getStyle().set("margin-bottom", "10px");
+            }
+        } else {
+            contentSelector.setEnabled(false);
+            contentSelector.setPlaceholder("No content available");
+            contentSelector.setWidthFull();
+            contentSelector.getStyle().set("margin-bottom", "10px");
+        }
+        
+        contentGrid = new Grid<>(Content.class, false);
         contentGrid.setHeight("200px");
         
         contentGrid.addColumn(Content::getName)
             .setHeader("Name").setResizable(true).setAutoWidth(true).setFlexGrow(1);
         contentGrid.addColumn(content -> content.getContentType() != null ? content.getContentType() : "-")
             .setHeader("Type").setResizable(true).setAutoWidth(true);
-        contentGrid.addColumn(content -> content.isPrimary() ? "Primary" : "Secondary")
-            .setHeader("Rendition").setResizable(true).setAutoWidth(true);
+        contentGrid.addColumn(content -> {
+            if (content.isPrimary()) {
+                return "Primary";
+            } else {
+                // Show parent rendition if available
+                if (content.getParentRendition() != null) {
+                    return "Secondary (from: " + content.getParentRendition().getName() + ")";
+                }
+                return "Secondary";
+            }
+        }).setHeader("Rendition").setResizable(true).setAutoWidth(true);
         
         if (reloadedDoc.getContents() != null) {
             contentGrid.setItems(reloadedDoc.getContents());
@@ -163,8 +241,11 @@ public class DocumentDetailDialog extends Dialog {
             extractFieldsButton.setTooltipText("No text content available. Upload a text file or transform PDF to text first.");
         }
         extractFieldsButton.addClickListener(e -> {
-            close();
-            openFieldExtractionDialog(reloadedDoc);
+            Content selectedContent = contentSelector.getValue();
+            logger.info("Extract fields clicked. Selected content: {}", 
+                selectedContent != null ? selectedContent.getName() : "NULL");
+            // Don't close the dialog - let user see the document details
+            openFieldExtractionDialog(reloadedDoc, selectedContent);
         });
         
         // AI Plugins menu
@@ -190,8 +271,18 @@ public class DocumentDetailDialog extends Dialog {
                 MenuItem pluginItem = categorySubMenu.addItem(pluginInfo.getDescription());
                 pluginItem.addComponentAsFirst(pluginIcon);
                 pluginItem.addClickListener(evt -> {
-                    close();
-                    openPluginDialog(reloadedDoc, pluginInfo);
+                    Content selectedContent = contentSelector.getValue();
+                    // Debug: log selected content
+                    logger.info("Plugin menu clicked. ContentSelector enabled: {}", contentSelector.isEnabled());
+                    logger.info("ContentSelector has items: {}", contentSelector.getListDataView().getItemCount());
+                    if (selectedContent != null) {
+                        logger.info("Selected content - ID: {}, Name: {}", selectedContent.getId(), selectedContent.getName());
+                    } else {
+                        logger.info("Selected content is NULL");
+                        logger.info("Checking if selector has value (isEmpty): {}", contentSelector.isEmpty());
+                    }
+                    // Don't close the dialog - let user see the document details while plugin dialog is open
+                    openPluginDialog(reloadedDoc, pluginInfo, selectedContent);
                 });
             }
         }
@@ -256,6 +347,7 @@ public class DocumentDetailDialog extends Dialog {
             documentFieldsContainer,
             new Hr(),
             contentTitle,
+            contentSelector,
             contentGrid,
             contentToolbar,
             new Hr(),
@@ -310,14 +402,18 @@ public class DocumentDetailDialog extends Dialog {
         viewDialog.open();
     }
     
-    private void openPluginDialog(Document document, PluginInfoDTO pluginInfo) {
+    private void openPluginDialog(Document document, PluginInfoDTO pluginInfo, Content selectedContent) {
         PluginExecutionDialog pluginDialog = new PluginExecutionDialog(
             document,
             pluginInfo,
             pluginService,
+            contentService,
+            selectedContent,
             response -> {
                 PluginResultDialog resultDialog = new PluginResultDialog(pluginInfo.getDescription(), response);
                 resultDialog.open();
+                // Refresh the document detail dialog to show new content
+                refreshDialog();
             }
         );
         pluginDialog.open();
@@ -374,7 +470,7 @@ public class DocumentDetailDialog extends Dialog {
         });
     }
     
-    private void openFieldExtractionDialog(Document document) {
+    private void openFieldExtractionDialog(Document document, Content selectedContent) {
         Dialog dialog = new Dialog();
         dialog.setWidth("900px");
         dialog.setHeight("80vh");
@@ -394,9 +490,10 @@ public class DocumentDetailDialog extends Dialog {
         dialog.open();
         
         // Perform extraction asynchronously
+        Long contentId = selectedContent != null ? selectedContent.getId() : null;
         CompletableFuture.supplyAsync(() -> {
             try {
-                return fieldExtractionService.extractFieldsFromDocument(document.getId());
+                return fieldExtractionService.extractFieldsFromDocument(document.getId(), contentId);
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
@@ -596,5 +693,70 @@ public class DocumentDetailDialog extends Dialog {
         }
         
         return checkbox;
+    }
+    
+    /**
+     * Refresh the dialog to show newly added content (e.g., after plugin execution)
+     */
+    private void refreshDialog() {
+        // Reload document with fresh contents
+        Document reloadedDoc = documentService.findById(document.getId());
+        if (reloadedDoc.getContents() != null) {
+            reloadedDoc.getContents().size(); // Force initialization
+        }
+        
+        // Reload content objects to ensure they're managed
+        List<Content> managedContents = new java.util.ArrayList<>();
+        if (reloadedDoc.getContents() != null) {
+            for (Content c : reloadedDoc.getContents()) {
+                Content managedContent = contentService.findById(c.getId());
+                if (managedContent != null) {
+                    managedContents.add(managedContent);
+                }
+            }
+        }
+        
+        // Update the content grid
+        if (contentGrid != null) {
+            contentGrid.setItems(reloadedDoc.getContents());
+        }
+        
+        // Update the content selector
+        if (contentSelector != null) {
+            List<Content> textContents = managedContents.stream()
+                .filter(c -> c.getContentType() != null && c.getContentType().startsWith("text/"))
+                .collect(java.util.stream.Collectors.toList());
+            
+            if (!textContents.isEmpty()) {
+                Content currentSelection = contentSelector.getValue();
+                contentSelector.setItems(textContents);
+                
+                // Try to keep the same selection if it still exists, otherwise select first
+                if (currentSelection != null) {
+                    boolean stillExists = textContents.stream()
+                        .anyMatch(c -> c.getId().equals(currentSelection.getId()));
+                    if (stillExists) {
+                        // Find the refreshed version of the selected content
+                        textContents.stream()
+                            .filter(c -> c.getId().equals(currentSelection.getId()))
+                            .findFirst()
+                            .ifPresent(contentSelector::setValue);
+                    } else {
+                        contentSelector.setValue(textContents.get(0));
+                    }
+                } else {
+                    contentSelector.setValue(textContents.get(0));
+                }
+                
+                contentSelector.setEnabled(true);
+            } else {
+                contentSelector.clear();
+                contentSelector.setEnabled(false);
+                contentSelector.setPlaceholder("No text content available");
+            }
+        }
+        
+        logger.info("Dialog refreshed. Content count: {}", 
+            reloadedDoc.getContents() != null ? reloadedDoc.getContents().size() : 0);
     }
 }

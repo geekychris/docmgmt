@@ -73,18 +73,24 @@ public class DocumentFieldExtractionService {
     }
     
     /**
-     * Extract field suggestions for a document based on its content
+     * Extract field suggestions for a document based on specific content
      * 
      * @param documentId The document ID
+     * @param contentId Optional specific content ID to use (null for default)
      * @return Field suggestions including current and suggested values
      * @throws IllegalArgumentException if document has no text content
      */
     @Transactional(readOnly = true)
-    public FieldSuggestionDTO extractFieldsFromDocument(Long documentId) {
+    public FieldSuggestionDTO extractFieldsFromDocument(Long documentId, Long contentId) {
         Document document = documentService.findById(documentId);
         
-        // Get text content from the document
-        String textContent = getDocumentTextContent(document);
+        // Get text content from specific content or document default
+        String textContent;
+        if (contentId != null) {
+            textContent = getTextFromContent(contentId);
+        } else {
+            textContent = getDocumentTextContent(document);
+        }
         
         if (textContent == null || textContent.trim().isEmpty()) {
             throw new IllegalArgumentException(
@@ -162,7 +168,30 @@ public class DocumentFieldExtractionService {
     }
     
     /**
-     * Get text content from document's primary content or text rendition
+     * Get text from a specific content object
+     */
+    private String getTextFromContent(Long contentId) {
+        try {
+            Content content = contentService.findById(contentId);
+            if (content == null) {
+                return null;
+            }
+            
+            // Only extract from text content
+            if (content.getContentType() == null || !content.getContentType().startsWith("text/")) {
+                return null;
+            }
+            
+            byte[] bytes = contentService.getContentBytes(contentId);
+            return new String(bytes, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            logger.warn("Failed to read content {}: {}", contentId, e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * Get text content from document's primary content or text rendition (default behavior)
      */
     private String getDocumentTextContent(Document document) {
         List<Content> contents = contentService.findBySysObject(document);
