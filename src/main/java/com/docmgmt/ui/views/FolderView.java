@@ -1758,12 +1758,33 @@ public class FolderView extends VerticalLayout {
             }
         });
         
+        // Storage location selection
+        RadioButtonGroup<String> storageType = new RadioButtonGroup<>();
+        storageType.setLabel("Storage Location");
+        storageType.setItems("Database", "File Store");
+        storageType.setValue("Database");
+        
+        ComboBox<FileStore> fileStoreCombo = new ComboBox<>("Select File Store");
+        fileStoreCombo.setItems(fileStoreService.findAll());
+        fileStoreCombo.setItemLabelGenerator(FileStore::getName);
+        fileStoreCombo.setVisible(false);
+        fileStoreCombo.setWidthFull();
+        
+        storageType.addValueChangeListener(e -> {
+            boolean isFileStore = "File Store".equals(e.getValue());
+            fileStoreCombo.setVisible(isFileStore);
+            if (isFileStore && fileStoreCombo.getValue() == null) {
+                fileStoreCombo.getListDataView().getItems().findFirst().ifPresent(fileStoreCombo::setValue);
+            }
+        });
+        
         // Import options
         Checkbox generateTextRenditions = new Checkbox("Generate text renditions for PDFs", true);
         Checkbox indexDocuments = new Checkbox("Index documents in search", true);
         Checkbox extractFields = new Checkbox("Apply AI field extraction", true);
         
         VerticalLayout optionsLayout = new VerticalLayout(
+            storageType, fileStoreCombo, new Hr(),
             generateTextRenditions, indexDocuments, extractFields);
         optionsLayout.setPadding(false);
         optionsLayout.setSpacing(false);
@@ -1779,6 +1800,16 @@ public class FolderView extends VerticalLayout {
                 return;
             }
             
+            // Validate file store selection if needed
+            boolean useFileStore = "File Store".equals(storageType.getValue());
+            FileStore selectedFileStore = fileStoreCombo.getValue();
+            if (useFileStore && selectedFileStore == null) {
+                Notification.show("Please select a file store", 
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                return;
+            }
+            
             dialog.close();
             
             // Import each selected item
@@ -1787,13 +1818,15 @@ public class FolderView extends VerticalLayout {
                     performImport(file.getAbsolutePath(), 
                         generateTextRenditions.getValue(),
                         indexDocuments.getValue(),
-                        extractFields.getValue());
+                        extractFields.getValue(),
+                        selectedFileStore);
                 } else {
                     // Import single file
                     performSingleFileImport(file,
                         generateTextRenditions.getValue(),
                         indexDocuments.getValue(),
-                        extractFields.getValue());
+                        extractFields.getValue(),
+                        selectedFileStore);
                 }
             }
         });
@@ -1820,7 +1853,7 @@ public class FolderView extends VerticalLayout {
      * Perform the import of a single file
      */
     private void performSingleFileImport(File file, boolean generateTextRenditions, 
-                                        boolean indexDocuments, boolean extractFields) {
+                                        boolean indexDocuments, boolean extractFields, FileStore fileStore) {
         Notification.show("Importing file: " + file.getName() + "...", 
             3000, Notification.Position.BOTTOM_START)
             .addThemeVariants(NotificationVariant.LUMO_CONTRAST);
@@ -1828,7 +1861,7 @@ public class FolderView extends VerticalLayout {
         // Process in background
         CompletableFuture.supplyAsync(() -> {
             try {
-                importFile(file, currentFolder, generateTextRenditions, indexDocuments, extractFields);
+                importFile(file, currentFolder, generateTextRenditions, indexDocuments, extractFields, fileStore);
                 return true;
             } catch (Exception e) {
                 logger.error("Failed to import file {}: {}", file.getName(), e.getMessage());
@@ -1863,7 +1896,7 @@ public class FolderView extends VerticalLayout {
      * Perform the import from directory
      */
     private void performImport(String directoryPath, boolean generateTextRenditions, 
-                              boolean indexDocuments, boolean extractFields) {
+                              boolean indexDocuments, boolean extractFields, FileStore fileStore) {
         Notification.show("Starting import from: " + directoryPath + "...\nThis may take a while.", 
             3000, Notification.Position.BOTTOM_START)
             .addThemeVariants(NotificationVariant.LUMO_CONTRAST);
@@ -1871,7 +1904,7 @@ public class FolderView extends VerticalLayout {
         // Process in background
         CompletableFuture.supplyAsync(() -> {
             return importDirectory(new File(directoryPath), currentFolder, 
-                generateTextRenditions, indexDocuments, extractFields);
+                generateTextRenditions, indexDocuments, extractFields, fileStore);
         }).thenAccept(stats -> {
             getUI().ifPresent(ui -> ui.access(() -> {
                 String message = String.format(
@@ -1902,7 +1935,8 @@ public class FolderView extends VerticalLayout {
     private int[] importDirectory(File dir, Folder parentFolder, 
                                   boolean generateTextRenditions, 
                                   boolean indexDocuments, 
-                                  boolean extractFields) {
+                                  boolean extractFields,
+                                  FileStore fileStore) {
         int[] stats = new int[3]; // [documents, folders, failed]
         
         if (!dir.exists() || !dir.isDirectory()) {
@@ -1941,7 +1975,7 @@ public class FolderView extends VerticalLayout {
         for (File file : files) {
             if (file.isFile()) {
                 try {
-                    importFile(file, parentFolder, generateTextRenditions, indexDocuments, extractFields);
+                    importFile(file, parentFolder, generateTextRenditions, indexDocuments, extractFields, fileStore);
                     stats[0]++; // documents imported
                     logger.info("Imported document: {}", file.getName());
                 } catch (Exception e) {
@@ -1954,7 +1988,7 @@ public class FolderView extends VerticalLayout {
         // Third pass: recursively process subdirectories
         for (Map.Entry<File, Folder> entry : dirToFolderMap.entrySet()) {
             int[] subStats = importDirectory(entry.getKey(), entry.getValue(), 
-                generateTextRenditions, indexDocuments, extractFields);
+                generateTextRenditions, indexDocuments, extractFields, fileStore);
             stats[0] += subStats[0];
             stats[1] += subStats[1];
             stats[2] += subStats[2];
@@ -1964,12 +1998,38 @@ public class FolderView extends VerticalLayout {
     }
     
     /**
+     * Generate a unique hierarchical storage path for a file
+     */
+    private String generateStoragePath(String originalFilename) {
+        String uuid = java.util.UUID.randomUUID().toString();
+        String extension = "";
+        
+        if (originalFilename != null && originalFilename.contains(".")) {
+            extension = originalFilename.substring(originalFilename.lastIndexOf('.'));
+        }
+        
+        // Remove hyphens from UUID for easier splitting
+        String uuidNoDashes = uuid.replace("-", "");
+        
+        // Create hierarchical path: split into 4 levels of 2 characters each
+        String level1 = uuidNoDashes.substring(0, 2);
+        String level2 = uuidNoDashes.substring(2, 4);
+        String level3 = uuidNoDashes.substring(4, 6);
+        String level4 = uuidNoDashes.substring(6, 8);
+        
+        // Construct path: dir1/dir2/dir3/dir4/originalUUID.ext
+        return String.format("%s/%s/%s/%s/%s%s", 
+            level1, level2, level3, level4, uuid, extension);
+    }
+    
+    /**
      * Import a single file as a document
      */
-    private void importFile(File file, Folder parentFolder, 
+    private void importFile(File file, Folder parentFolder,
                            boolean generateTextRenditions, 
                            boolean indexDocuments, 
-                           boolean extractFields) throws Exception {
+                           boolean extractFields,
+                           FileStore fileStore) throws Exception {
         // Read file bytes
         byte[] fileBytes = java.nio.file.Files.readAllBytes(file.toPath());
         
@@ -1987,15 +2047,30 @@ public class FolderView extends VerticalLayout {
         document = documentService.save(document);
         
         // Create primary content
-        Content content = Content.builder()
+        Content content;
+        Content.ContentBuilder contentBuilder = Content.builder()
             .name(file.getName())
             .contentType(contentType)
-            .content(fileBytes)
             .isPrimary(true)
             .isIndexable(true)
-            .sysObject(document)
-            .build();
-        content = contentService.save(content);
+            .sysObject(document);
+        
+        // Set storage location based on fileStore parameter
+        if (fileStore != null) {
+            // Generate unique storage path for file store
+            String storagePath = generateStoragePath(file.getName());
+            contentBuilder.fileStore(fileStore).storagePath(storagePath);
+            
+            // Save content entity first
+            content = contentService.save(contentBuilder.build());
+            
+            // Then store the file bytes
+            content.setContentBytes(fileBytes);
+        } else {
+            // Store in database
+            contentBuilder.content(fileBytes);
+            content = contentService.save(contentBuilder.build());
+        }
         
         // Add document to folder - reload both entities to ensure clean managed state
         Document managedDocument = documentService.findById(document.getId());
