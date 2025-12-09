@@ -375,6 +375,31 @@ public class DocumentDetailDialog extends Dialog {
             byte[] contentBytes = contentService.getContentBytes(content.getId());
             String contentType = content.getContentType();
             
+            // Add download/open link at the top for all content types
+            com.vaadin.flow.server.StreamResource streamResource = 
+                new com.vaadin.flow.server.StreamResource(
+                    content.getName(),
+                    () -> new java.io.ByteArrayInputStream(contentBytes)
+                );
+            if (contentType != null) {
+                streamResource.setContentType(contentType);
+            }
+            
+            com.vaadin.flow.component.html.Anchor downloadLink = 
+                new com.vaadin.flow.component.html.Anchor(streamResource, "Download/Open in New Tab");
+            downloadLink.setTarget("_blank");
+            downloadLink.getElement().setAttribute("download", content.getName());
+            downloadLink.getStyle()
+                .set("display", "inline-block")
+                .set("margin-bottom", "15px")
+                .set("padding", "8px 16px")
+                .set("background-color", "var(--lumo-primary-color)")
+                .set("color", "var(--lumo-primary-contrast-color)")
+                .set("text-decoration", "none")
+                .set("border-radius", "4px");
+            
+            contentView.add(downloadLink);
+            
             if (contentType != null && contentType.startsWith("text/")) {
                 String textContent = new String(contentBytes, java.nio.charset.StandardCharsets.UTF_8);
                 
