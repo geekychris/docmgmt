@@ -432,6 +432,38 @@ public class DocumentDetailDialog extends Dialog {
                     .set("border", "none")
                     .set("min-height", "600px");
                 contentView.add(iframe);
+            } else if (contentType != null && isExcelFile(contentType)) {
+                // Display Excel file as HTML table
+                String htmlTable = convertExcelToHtmlTable(contentBytes, contentType);
+                com.vaadin.flow.component.html.Div excelDiv = new com.vaadin.flow.component.html.Div();
+                excelDiv.getElement().setProperty("innerHTML", htmlTable);
+                excelDiv.getStyle()
+                    .set("overflow", "auto")
+                    .set("padding", "10px");
+                contentView.add(excelDiv);
+            } else if (contentType != null && isVideoFile(contentType)) {
+                // Display video using HTML5 video player
+                String base64 = java.util.Base64.getEncoder().encodeToString(contentBytes);
+                String dataUri = "data:" + contentType + ";base64," + base64;
+                
+                // Create video element using HTML
+                com.vaadin.flow.component.html.Div videoContainer = new com.vaadin.flow.component.html.Div();
+                videoContainer.getElement().setProperty("innerHTML", 
+                    "<video controls style='width: 100%; max-height: 70vh;'>" +
+                    "<source src='" + dataUri + "' type='" + contentType + "'>" +
+                    "Your browser does not support the video tag." +
+                    "</video>");
+                videoContainer.getStyle().set("text-align", "center");
+                contentView.add(videoContainer);
+            } else if (contentType != null && isImageFile(contentType)) {
+                // Display image
+                String base64 = java.util.Base64.getEncoder().encodeToString(contentBytes);
+                String dataUri = "data:" + contentType + ";base64," + base64;
+                
+                com.vaadin.flow.component.html.Image image = new com.vaadin.flow.component.html.Image(dataUri, content.getName());
+                image.setMaxWidth("100%");
+                image.getStyle().set("display", "block").set("margin", "auto");
+                contentView.add(image);
             } else {
                 Span unsupportedMsg = new Span("Content type not supported for inline viewing: " + contentType);
                 contentView.add(unsupportedMsg);
@@ -564,6 +596,112 @@ public class DocumentDetailDialog extends Dialog {
             .replace(">", "&gt;")
             .replace("\"", "&quot;")
             .replace("'", "&#39;");
+    }
+    
+    /**
+     * Check if content type is an Excel file
+     */
+    private boolean isExcelFile(String contentType) {
+        String type = contentType.toLowerCase();
+        return type.equals("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") ||
+               type.equals("application/vnd.ms-excel") ||
+               type.equals("application/excel") ||
+               type.equals("application/x-excel") ||
+               type.equals("application/x-msexcel");
+    }
+    
+    /**
+     * Check if content type is a video file
+     */
+    private boolean isVideoFile(String contentType) {
+        String type = contentType.toLowerCase();
+        return type.startsWith("video/") ||
+               type.equals("application/x-mpegurl") ||
+               type.equals("video/mp4") ||
+               type.equals("video/webm") ||
+               type.equals("video/ogg") ||
+               type.equals("video/quicktime") ||
+               type.equals("video/x-msvideo");
+    }
+    
+    /**
+     * Check if content type is an image file
+     */
+    private boolean isImageFile(String contentType) {
+        String type = contentType.toLowerCase();
+        return type.startsWith("image/");
+    }
+    
+    /**
+     * Convert Excel file to HTML table
+     */
+    private String convertExcelToHtmlTable(byte[] excelBytes, String contentType) {
+        try (java.io.ByteArrayInputStream inputStream = new java.io.ByteArrayInputStream(excelBytes)) {
+            org.apache.poi.ss.usermodel.Workbook workbook;
+            
+            if (contentType.equals("application/vnd.ms-excel")) {
+                workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook(inputStream);
+            } else {
+                workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook(inputStream);
+            }
+            
+            StringBuilder html = new StringBuilder();
+            html.append("<style>")
+                .append("table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }")
+                .append("th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }")
+                .append("th { background-color: #f2f2f2; font-weight: bold; }")
+                .append("tr:nth-child(even) { background-color: #f9f9f9; }")
+                .append(".sheet-header { font-size: 18px; font-weight: bold; margin: 20px 0 10px 0; }")
+                .append("</style>");
+            
+            org.apache.poi.ss.usermodel.DataFormatter dataFormatter = new org.apache.poi.ss.usermodel.DataFormatter();
+            
+            // Iterate through all sheets
+            for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+                org.apache.poi.ss.usermodel.Sheet sheet = workbook.getSheetAt(i);
+                
+                // Add sheet name
+                html.append("<div class='sheet-header'>Sheet: ")
+                    .append(escapeHtml(sheet.getSheetName()))
+                    .append("</div>");
+                
+                // Start table
+                html.append("<table>");
+                
+                boolean firstRow = true;
+                for (org.apache.poi.ss.usermodel.Row row : sheet) {
+                    html.append("<tr>");
+                    
+                    // Use first row as header
+                    String cellTag = firstRow ? "th" : "td";
+                    
+                    int lastCellNum = row.getLastCellNum();
+                    for (int cellNum = 0; cellNum < lastCellNum; cellNum++) {
+                        org.apache.poi.ss.usermodel.Cell cell = row.getCell(cellNum);
+                        String cellValue = "";
+                        
+                        if (cell != null) {
+                            cellValue = dataFormatter.formatCellValue(cell);
+                        }
+                        
+                        html.append("<").append(cellTag).append(">")
+                            .append(escapeHtml(cellValue))
+                            .append("</").append(cellTag).append(">");
+                    }
+                    
+                    html.append("</tr>");
+                    firstRow = false;
+                }
+                
+                html.append("</table>");
+            }
+            
+            workbook.close();
+            return html.toString();
+            
+        } catch (Exception e) {
+            return "<p style='color: red;'>Error rendering Excel file: " + escapeHtml(e.getMessage()) + "</p>";
+        }
     }
     
     private void openPluginDialog(Document document, PluginInfoDTO pluginInfo, Content selectedContent) {

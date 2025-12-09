@@ -211,6 +211,33 @@ public class DocumentController extends AbstractSysObjectController<Document, Do
     }
     
     /**
+     * Batch extract and apply fields for multiple documents
+     * @param request Request containing list of document IDs
+     * @return Map of document ID to result status
+     */
+    @Operation(
+        summary = "Batch extract and apply fields",
+        description = "Extract and automatically apply AI-suggested fields for multiple documents. Only non-null extracted fields are applied."
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Batch processing completed"),
+        @ApiResponse(responseCode = "500", description = "Error during batch processing")
+    })
+    @PostMapping("/batch-extract-fields")
+    public ResponseEntity<Map<Long, String>> batchExtractFields(
+            @RequestBody BatchExtractRequest request) {
+        try {
+            Map<Long, String> results = fieldExtractionService.extractAndApplyFieldsForDocuments(
+                request.getDocumentIds()
+            );
+            return ResponseEntity.ok(results);
+        } catch (Exception e) {
+            logger.error("Error during batch field extraction", e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error during batch extraction", e);
+        }
+    }
+    
+    /**
      * Request body for applying field suggestions
      */
     public static class ApplyFieldsRequest {
@@ -231,6 +258,21 @@ public class DocumentController extends AbstractSysObjectController<Document, Do
         
         public void setSuggestedFields(FieldSuggestionDTO.DocumentFields suggestedFields) {
             this.suggestedFields = suggestedFields;
+        }
+    }
+    
+    /**
+     * Request body for batch field extraction
+     */
+    public static class BatchExtractRequest {
+        private List<Long> documentIds;
+        
+        public List<Long> getDocumentIds() {
+            return documentIds;
+        }
+        
+        public void setDocumentIds(List<Long> documentIds) {
+            this.documentIds = documentIds;
         }
     }
 }

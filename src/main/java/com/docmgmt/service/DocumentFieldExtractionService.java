@@ -168,6 +168,78 @@ public class DocumentFieldExtractionService {
     }
     
     /**
+     * Extract and auto-apply fields for multiple documents
+     * Only applies fields that are extracted successfully (non-null)
+     * 
+     * @param documentIds List of document IDs to process
+     * @return Map of document ID to result (success/error message)
+     */
+    @Transactional
+    public Map<Long, String> extractAndApplyFieldsForDocuments(List<Long> documentIds) {
+        Map<Long, String> results = new HashMap<>();
+        
+        for (Long documentId : documentIds) {
+            try {
+                Document document = documentService.findById(documentId);
+                
+                // Check if document has text content before attempting extraction
+                String textContent = getDocumentTextContent(document);
+                if (textContent == null || textContent.trim().isEmpty()) {
+                    results.put(documentId, "Skipped: No text content");
+                    logger.info("Skipping document ID {} - no text content available", documentId);
+                    continue;
+                }
+                
+                // Extract fields
+                FieldSuggestionDTO suggestions = extractFieldsFromDocument(documentId, null);
+                FieldSuggestionDTO.DocumentFields suggestedFields = suggestions.getSuggestedFields();
+                
+                // Auto-apply all non-null fields
+                if (suggestedFields.getDescription() != null && !suggestedFields.getDescription().isEmpty()) {
+                    document.setDescription(suggestedFields.getDescription());
+                }
+                
+                if (suggestedFields.getKeywords() != null && !suggestedFields.getKeywords().isEmpty()) {
+                    document.setKeywords(suggestedFields.getKeywords());
+                }
+                
+                if (suggestedFields.getTags() != null && !suggestedFields.getTags().isEmpty()) {
+                    document.setTags(new HashSet<>(suggestedFields.getTags()));
+                }
+                
+                if (suggestedFields.getDocumentType() != null) {
+                    document.setDocumentType(suggestedFields.getDocumentType());
+                }
+                
+                // Apply type-specific fields if available
+                if (document instanceof DocumentFieldExtractor && 
+                    suggestedFields.getTypeSpecificFields() != null && 
+                    !suggestedFields.getTypeSpecificFields().isEmpty()) {
+                    ((DocumentFieldExtractor) document).applyExtractedFields(
+                        suggestedFields.getTypeSpecificFields());
+                }
+                
+                documentService.save(document);
+                results.put(documentId, "Success");
+                
+                logger.info("Successfully extracted and applied fields for document ID: {}", documentId);
+                
+            } catch (IllegalArgumentException e) {
+                // Handle expected validation errors gracefully
+                results.put(documentId, "Skipped: " + e.getMessage());
+                logger.warn("Skipped document ID {}: {}", documentId, e.getMessage());
+            } catch (Exception e) {
+                // Handle unexpected errors
+                String errorMsg = "Failed: " + e.getMessage();
+                results.put(documentId, errorMsg);
+                logger.error("Failed to extract fields for document ID {}: {}", documentId, e.getMessage());
+            }
+        }
+        
+        return results;
+    }
+    
+    /**
      * Get text from a specific content object
      */
     private String getTextFromContent(Long contentId) {

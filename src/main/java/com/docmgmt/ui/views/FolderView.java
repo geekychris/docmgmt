@@ -98,6 +98,8 @@ public class FolderView extends VerticalLayout {
     private Button moveFoldersButton;
     private Button moveToRootButton;
     private Button rebuildIndexButton;
+    private Button batchExtractFieldsButton;
+    private Button importDirectoryButton;
     
     private H3 currentFolderLabel;
     
@@ -185,10 +187,20 @@ public class FolderView extends VerticalLayout {
         rebuildIndexButton.setEnabled(false);
         rebuildIndexButton.addClickListener(e -> openRebuildIndexDialog());
         
+        batchExtractFieldsButton = new Button("AI Extract Fields (Batch)", new Icon(VaadinIcon.LIGHTBULB));
+        batchExtractFieldsButton.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
+        batchExtractFieldsButton.setEnabled(false);
+        batchExtractFieldsButton.addClickListener(e -> batchExtractFields());
+        
+        importDirectoryButton = new Button("Import from Directory", new Icon(VaadinIcon.DOWNLOAD));
+        importDirectoryButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        importDirectoryButton.setEnabled(false);
+        importDirectoryButton.addClickListener(e -> openImportDirectoryDialog());
+        
         HorizontalLayout toolbar = new HorizontalLayout(
             createFolderButton, createSubfolderButton, addDocumentButton, linkDocumentButton,
             new Hr(), moveFoldersButton, moveToRootButton,
-            new Hr(), rebuildIndexButton
+            new Hr(), rebuildIndexButton, batchExtractFieldsButton, importDirectoryButton
         );
         toolbar.setDefaultVerticalComponentAlignment(FlexComponent.Alignment.CENTER);
         toolbar.setPadding(true);
@@ -318,6 +330,12 @@ public class FolderView extends VerticalLayout {
             // Only enable transform for documents (not folders)
             transformButton.setEnabled(hasSelection && 
                 event.getFirstSelectedItem().filter(item -> item instanceof Document).isPresent());
+            
+            // Enable batch extract for multiple documents selected
+            long docCount = itemsGrid.getSelectedItems().stream()
+                .filter(item -> item instanceof Document)
+                .count();
+            batchExtractFieldsButton.setEnabled(docCount > 0);
         });
         
         // Add double-click listener to open document details
@@ -342,6 +360,7 @@ public class FolderView extends VerticalLayout {
         linkDocumentButton.setEnabled(true);
         transformFolderButton.setEnabled(true);
         rebuildIndexButton.setEnabled(true);
+        importDirectoryButton.setEnabled(true);
         refreshFolderContents();
     }
     
@@ -1532,6 +1551,490 @@ public class FolderView extends VerticalLayout {
             reloadedFolder.getChildFolders().size(); // Force init
             for (Folder childFolder : reloadedFolder.getChildFolders()) {
                 transformFolderRecursive(childFolder, counts);
+            }
+        }
+    }
+    
+    /**
+     * Batch extract and apply AI fields for selected documents
+     */
+    private void batchExtractFields() {
+        List<Long> documentIds = itemsGrid.getSelectedItems().stream()
+            .filter(item -> item instanceof Document)
+            .map(item -> ((Document) item).getId())
+            .collect(Collectors.toList());
+        
+        if (documentIds.isEmpty()) {
+            Notification.show("No documents selected", 3000, Notification.Position.BOTTOM_START)
+                .addThemeVariants(NotificationVariant.LUMO_WARNING);
+            return;
+        }
+        
+        // Show progress notification
+        Notification.show("Extracting fields for " + documentIds.size() + " document(s)...  This may take a while.", 
+            3000, Notification.Position.BOTTOM_START)
+            .addThemeVariants(NotificationVariant.LUMO_CONTRAST);
+        
+        // Process in background
+        CompletableFuture.supplyAsync(() -> {
+            return fieldExtractionService.extractAndApplyFieldsForDocuments(documentIds);
+        }).thenAccept(results -> {
+            getUI().ifPresent(ui -> ui.access(() -> {
+                long successCount = results.values().stream()
+                    .filter(result -> result.equals("Success"))
+                    .count();
+                long skippedCount = results.values().stream()
+                    .filter(result -> result.startsWith("Skipped:"))
+                    .count();
+                long failedCount = results.values().stream()
+                    .filter(result -> result.startsWith("Failed:"))
+                    .count();
+                
+                String message;
+                if (successCount > 0 && failedCount == 0 && skippedCount == 0) {
+                    message = "Successfully extracted and applied fields for " + successCount + " document(s)";
+                    Notification.show(message, 5000, Notification.Position.BOTTOM_START)
+                        .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                } else if (successCount > 0) {
+                    message = "Extracted fields for " + successCount + " document(s)";
+                    if (skippedCount > 0) {
+                        message += ", " + skippedCount + " skipped (no text content)";
+                    }
+                    if (failedCount > 0) {
+                        message += ", " + failedCount + " failed";
+                    }
+                    Notification.show(message, 5000, Notification.Position.BOTTOM_START)
+                        .addThemeVariants(NotificationVariant.LUMO_CONTRAST);
+                } else {
+                    if (skippedCount > 0 && failedCount == 0) {
+                        message = "All " + skippedCount + " document(s) skipped (no text content available)";
+                        Notification.show(message, 5000, Notification.Position.BOTTOM_START)
+                            .addThemeVariants(NotificationVariant.LUMO_CONTRAST);
+                    } else {
+                        message = "Failed to extract fields";
+                        if (skippedCount > 0) {
+                            message += ": " + skippedCount + " skipped, ";
+                        }
+                        if (failedCount > 0) {
+                            message += failedCount + " failed";
+                        }
+                        Notification.show(message, 5000, Notification.Position.BOTTOM_START)
+                            .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                    }
+                }
+                
+                // Refresh the grid
+                refreshFolderContents();
+                ui.push();
+            }));
+        }).exceptionally(ex -> {
+            getUI().ifPresent(ui -> ui.access(() -> {
+                Notification.show("Error during batch extraction: " + ex.getMessage(), 
+                    5000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                ui.push();
+            }));
+            return null;
+        });
+    }
+    
+    /**
+     * Open import from directory dialog
+     */
+    private void openImportDirectoryDialog() {
+        if (currentFolder == null) {
+            return;
+        }
+        
+        Dialog dialog = new Dialog();
+        dialog.setWidth("800px");
+        dialog.setHeight("80vh");
+        
+        H2 title = new H2("Import from Server Directory");
+        
+        Span helpText = new Span("Browse and select a directory or files to import. " +
+            "The folder hierarchy will be recreated under: " + currentFolder.getName());
+        helpText.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        
+        // Current path display and navigation
+        TextField currentPathField = new TextField("Current Path");
+        currentPathField.setWidthFull();
+        currentPathField.setReadOnly(true);
+        
+        // File browser grid
+        Grid<File> fileGrid = new Grid<>();
+        fileGrid.setHeight("400px");
+        fileGrid.setSelectionMode(Grid.SelectionMode.MULTI);
+        
+        fileGrid.addColumn(file -> file.isDirectory() ? "📁 " + file.getName() : "📄 " + file.getName())
+            .setHeader("Name")
+            .setAutoWidth(true)
+            .setFlexGrow(1);
+        
+        fileGrid.addColumn(file -> {
+            if (file.isDirectory()) {
+                return "Directory";
+            }
+            long bytes = file.length();
+            if (bytes < 1024) return bytes + " B";
+            if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
+            return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
+        })
+            .setHeader("Size")
+            .setAutoWidth(true);
+        
+        // Track current directory
+        File[] currentDirectory = new File[] { new File(System.getProperty("user.home")) };
+        
+        // Function to refresh file list
+        Runnable refreshFileList = () -> {
+            File dir = currentDirectory[0];
+            currentPathField.setValue(dir.getAbsolutePath());
+            
+            File[] files = dir.listFiles();
+            if (files != null) {
+                java.util.Arrays.sort(files, (a, b) -> {
+                    if (a.isDirectory() && !b.isDirectory()) return -1;
+                    if (!a.isDirectory() && b.isDirectory()) return 1;
+                    return a.getName().compareToIgnoreCase(b.getName());
+                });
+                fileGrid.setItems(files);
+            } else {
+                fileGrid.setItems();
+            }
+        };
+        
+        refreshFileList.run();
+        
+        // Navigation buttons
+        Button parentButton = new Button("Parent Directory", e -> {
+            File parent = currentDirectory[0].getParentFile();
+            if (parent != null && parent.exists()) {
+                currentDirectory[0] = parent;
+                refreshFileList.run();
+            }
+        });
+        parentButton.setIcon(new Icon(VaadinIcon.ARROW_UP));
+        
+        Button homeButton = new Button("Home", e -> {
+            currentDirectory[0] = new File(System.getProperty("user.home"));
+            refreshFileList.run();
+        });
+        homeButton.setIcon(new Icon(VaadinIcon.HOME));
+        
+        Button rootButton = new Button("Root", e -> {
+            currentDirectory[0] = new File("/");
+            refreshFileList.run();
+        });
+        rootButton.setIcon(new Icon(VaadinIcon.FOLDER_O));
+        
+        HorizontalLayout navButtons = new HorizontalLayout(parentButton, homeButton, rootButton);
+        navButtons.setSpacing(true);
+        
+        // Double-click to navigate into directories
+        fileGrid.addItemDoubleClickListener(event -> {
+            File file = event.getItem();
+            if (file.isDirectory()) {
+                currentDirectory[0] = file;
+                refreshFileList.run();
+                fileGrid.deselectAll();
+            }
+        });
+        
+        // Selection info
+        Span selectionInfo = new Span("No items selected");
+        selectionInfo.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        
+        fileGrid.addSelectionListener(event -> {
+            int count = event.getAllSelectedItems().size();
+            if (count == 0) {
+                selectionInfo.setText("No items selected");
+            } else if (count == 1) {
+                File selected = event.getAllSelectedItems().iterator().next();
+                selectionInfo.setText("Selected: " + selected.getName() + 
+                    (selected.isDirectory() ? " (directory)" : " (file)"));
+            } else {
+                selectionInfo.setText(count + " items selected");
+            }
+        });
+        
+        // Import options
+        Checkbox generateTextRenditions = new Checkbox("Generate text renditions for PDFs", true);
+        Checkbox indexDocuments = new Checkbox("Index documents in search", true);
+        Checkbox extractFields = new Checkbox("Apply AI field extraction", true);
+        
+        VerticalLayout optionsLayout = new VerticalLayout(
+            generateTextRenditions, indexDocuments, extractFields);
+        optionsLayout.setPadding(false);
+        optionsLayout.setSpacing(false);
+        
+        // Buttons
+        Button cancelButton = new Button("Cancel", e -> dialog.close());
+        Button importButton = new Button("Import Selected", e -> {
+            java.util.Set<File> selectedFiles = fileGrid.getSelectedItems();
+            if (selectedFiles.isEmpty()) {
+                Notification.show("Please select at least one file or directory to import", 
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                return;
+            }
+            
+            dialog.close();
+            
+            // Import each selected item
+            for (File file : selectedFiles) {
+                if (file.isDirectory()) {
+                    performImport(file.getAbsolutePath(), 
+                        generateTextRenditions.getValue(),
+                        indexDocuments.getValue(),
+                        extractFields.getValue());
+                } else {
+                    // Import single file
+                    performSingleFileImport(file,
+                        generateTextRenditions.getValue(),
+                        indexDocuments.getValue(),
+                        extractFields.getValue());
+                }
+            }
+        });
+        importButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        
+        HorizontalLayout buttonLayout = new HorizontalLayout(cancelButton, importButton);
+        buttonLayout.setJustifyContentMode(FlexComponent.JustifyContentMode.END);
+        buttonLayout.setWidthFull();
+        
+        VerticalLayout layout = new VerticalLayout(
+            title, helpText, new Hr(),
+            currentPathField, navButtons,
+            fileGrid, selectionInfo,
+            new Hr(), optionsLayout, new Hr(), buttonLayout);
+        layout.setPadding(true);
+        layout.setSpacing(true);
+        layout.setFlexGrow(1, fileGrid);
+        
+        dialog.add(layout);
+        dialog.open();
+    }
+    
+    /**
+     * Perform the import of a single file
+     */
+    private void performSingleFileImport(File file, boolean generateTextRenditions, 
+                                        boolean indexDocuments, boolean extractFields) {
+        Notification.show("Importing file: " + file.getName() + "...", 
+            3000, Notification.Position.BOTTOM_START)
+            .addThemeVariants(NotificationVariant.LUMO_CONTRAST);
+        
+        // Process in background
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                importFile(file, currentFolder, generateTextRenditions, indexDocuments, extractFields);
+                return true;
+            } catch (Exception e) {
+                logger.error("Failed to import file {}: {}", file.getName(), e.getMessage());
+                return false;
+            }
+        }).thenAccept(success -> {
+            getUI().ifPresent(ui -> ui.access(() -> {
+                if (success) {
+                    Notification.show("Successfully imported: " + file.getName(), 
+                        3000, Notification.Position.BOTTOM_START)
+                        .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                } else {
+                    Notification.show("Failed to import: " + file.getName(), 
+                        3000, Notification.Position.BOTTOM_START)
+                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                }
+                refreshFolderContents();
+                ui.push();
+            }));
+        }).exceptionally(ex -> {
+            getUI().ifPresent(ui -> ui.access(() -> {
+                Notification.show("Import failed: " + ex.getMessage(), 
+                    5000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                ui.push();
+            }));
+            return null;
+        });
+    }
+    
+    /**
+     * Perform the import from directory
+     */
+    private void performImport(String directoryPath, boolean generateTextRenditions, 
+                              boolean indexDocuments, boolean extractFields) {
+        Notification.show("Starting import from: " + directoryPath + "...\nThis may take a while.", 
+            3000, Notification.Position.BOTTOM_START)
+            .addThemeVariants(NotificationVariant.LUMO_CONTRAST);
+        
+        // Process in background
+        CompletableFuture.supplyAsync(() -> {
+            return importDirectory(new File(directoryPath), currentFolder, 
+                generateTextRenditions, indexDocuments, extractFields);
+        }).thenAccept(stats -> {
+            getUI().ifPresent(ui -> ui.access(() -> {
+                String message = String.format(
+                    "Import complete: %d documents imported, %d folders created, %d failed",
+                    stats[0], stats[1], stats[2]);
+                Notification.show(message, 5000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(stats[2] == 0 ? 
+                        NotificationVariant.LUMO_SUCCESS : NotificationVariant.LUMO_CONTRAST);
+                refreshFolderTree();
+                refreshFolderContents();
+                ui.push();
+            }));
+        }).exceptionally(ex -> {
+            getUI().ifPresent(ui -> ui.access(() -> {
+                Notification.show("Import failed: " + ex.getMessage(), 
+                    5000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                ui.push();
+            }));
+            return null;
+        });
+    }
+    
+    /**
+     * Recursively import directory structure
+     * @return Array of [documentsImported, foldersCreated, failed]
+     */
+    private int[] importDirectory(File dir, Folder parentFolder, 
+                                  boolean generateTextRenditions, 
+                                  boolean indexDocuments, 
+                                  boolean extractFields) {
+        int[] stats = new int[3]; // [documents, folders, failed]
+        
+        if (!dir.exists() || !dir.isDirectory()) {
+            logger.warn("Directory does not exist or is not a directory: {}", dir.getAbsolutePath());
+            return stats;
+        }
+        
+        File[] files = dir.listFiles();
+        if (files == null) {
+            return stats;
+        }
+        
+        // First pass: create subdirectories
+        Map<File, Folder> dirToFolderMap = new HashMap<>();
+        for (File file : files) {
+            if (file.isDirectory()) {
+                try {
+                    Folder subfolder = Folder.builder()
+                        .name(file.getName())
+                        .build();
+                    subfolder.setDescription("Imported from: " + file.getAbsolutePath());
+                    subfolder.setParentFolder(parentFolder);
+                    subfolder = folderService.save(subfolder);
+                    parentFolder.addChildFolder(subfolder);
+                    dirToFolderMap.put(file, subfolder);
+                    stats[1]++; // folders created
+                    logger.info("Created folder: {}", file.getName());
+                } catch (Exception e) {
+                    logger.error("Failed to create folder {}: {}", file.getName(), e.getMessage());
+                    stats[2]++;
+                }
+            }
+        }
+        
+        // Second pass: import files
+        for (File file : files) {
+            if (file.isFile()) {
+                try {
+                    importFile(file, parentFolder, generateTextRenditions, indexDocuments, extractFields);
+                    stats[0]++; // documents imported
+                    logger.info("Imported document: {}", file.getName());
+                } catch (Exception e) {
+                    logger.error("Failed to import file {}: {}", file.getName(), e.getMessage());
+                    stats[2]++;
+                }
+            }
+        }
+        
+        // Third pass: recursively process subdirectories
+        for (Map.Entry<File, Folder> entry : dirToFolderMap.entrySet()) {
+            int[] subStats = importDirectory(entry.getKey(), entry.getValue(), 
+                generateTextRenditions, indexDocuments, extractFields);
+            stats[0] += subStats[0];
+            stats[1] += subStats[1];
+            stats[2] += subStats[2];
+        }
+        
+        return stats;
+    }
+    
+    /**
+     * Import a single file as a document
+     */
+    private void importFile(File file, Folder parentFolder, 
+                           boolean generateTextRenditions, 
+                           boolean indexDocuments, 
+                           boolean extractFields) throws Exception {
+        // Read file bytes
+        byte[] fileBytes = java.nio.file.Files.readAllBytes(file.toPath());
+        
+        // Determine content type
+        String contentType = java.nio.file.Files.probeContentType(file.toPath());
+        if (contentType == null) {
+            contentType = "application/octet-stream";
+        }
+        
+        // Create document (using Article as default)
+        Document document = Article.builder().build();
+        document.setName(file.getName());
+        document.setDescription("Imported from: " + file.getAbsolutePath());
+        document.setDocumentType(DocumentType.OTHER);
+        document = documentService.save(document);
+        
+        // Create primary content
+        Content content = Content.builder()
+            .name(file.getName())
+            .contentType(contentType)
+            .content(fileBytes)
+            .isPrimary(true)
+            .isIndexable(true)
+            .sysObject(document)
+            .build();
+        content = contentService.save(content);
+        
+        // Add document to folder - reload both entities to ensure clean managed state
+        Document managedDocument = documentService.findById(document.getId());
+        Folder managedFolder = folderService.findById(parentFolder.getId());
+        if (!managedFolder.getItems().contains(managedDocument)) {
+            managedFolder.addItem(managedDocument);
+            folderService.save(managedFolder);
+        }
+        
+        // Generate text rendition if requested and it's a PDF
+        if (generateTextRenditions && "application/pdf".equals(contentType)) {
+            try {
+                contentService.transformAndAddRendition(content.getId(), "text/plain");
+                logger.info("Generated text rendition for: {}", file.getName());
+            } catch (Exception e) {
+                logger.warn("Failed to generate text rendition for {}: {}", file.getName(), e.getMessage());
+            }
+        }
+        
+        // Index document if requested
+        if (indexDocuments) {
+            try {
+                luceneIndexService.indexDocument(document);
+                logger.info("Indexed document: {}", file.getName());
+            } catch (Exception e) {
+                logger.warn("Failed to index {}: {}", file.getName(), e.getMessage());
+            }
+        }
+        
+        // Extract fields if requested
+        if (extractFields) {
+            try {
+                Map<Long, String> result = fieldExtractionService.extractAndApplyFieldsForDocuments(
+                    Collections.singletonList(document.getId()));
+                if (result.get(document.getId()).equals("Success")) {
+                    logger.info("Extracted fields for: {}", file.getName());
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to extract fields for {}: {}", file.getName(), e.getMessage());
             }
         }
     }

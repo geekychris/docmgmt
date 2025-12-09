@@ -194,12 +194,18 @@ public class SearchView extends VerticalLayout {
         resultsCount = new Span("No search performed");
         resultsCount.getStyle().set("font-weight", "bold");
         
-        HorizontalLayout controlsLayout = new HorizontalLayout(resultsCount, maxResultsSelect, pageSizeSelect);
+        Button batchExtractFieldsButton = new Button("AI Extract Fields (Batch)", new Icon(VaadinIcon.LIGHTBULB));
+        batchExtractFieldsButton.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
+        batchExtractFieldsButton.setEnabled(false);
+        batchExtractFieldsButton.addClickListener(e -> batchExtractFields());
+        
+        HorizontalLayout controlsLayout = new HorizontalLayout(resultsCount, maxResultsSelect, pageSizeSelect, batchExtractFieldsButton);
         controlsLayout.setDefaultVerticalComponentAlignment(FlexComponent.Alignment.CENTER);
         controlsLayout.setSpacing(true);
         
         resultsGrid = new Grid<>(SearchResult.class, false);
         resultsGrid.setSizeFull();
+        resultsGrid.setSelectionMode(Grid.SelectionMode.MULTI);
         
         resultsGrid.addColumn(SearchResult::getName).setHeader("Name").setAutoWidth(true).setFlexGrow(1);
         resultsGrid.addColumn(SearchResult::getDescription).setHeader("Description").setAutoWidth(true).setFlexGrow(2);
@@ -223,6 +229,11 @@ public class SearchView extends VerticalLayout {
             .setHeader("Score").setAutoWidth(true);
         
         resultsGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COMPACT);
+        
+        // Enable batch extract button when documents are selected
+        resultsGrid.addSelectionListener(event -> {
+            batchExtractFieldsButton.setEnabled(!event.getAllSelectedItems().isEmpty());
+        });
         
         // Make rows clickable to navigate to document details
         resultsGrid.addItemClickListener(event -> {
@@ -364,5 +375,88 @@ public class SearchView extends VerticalLayout {
             similarityService,
             fieldExtractionService
         ).open();
+    }
+    
+    /**
+     * Batch extract and apply AI fields for selected documents
+     */
+    private void batchExtractFields() {
+        List<Long> documentIds = resultsGrid.getSelectedItems().stream()
+            .map(SearchResult::getDocumentId)
+            .filter(Objects::nonNull)
+            .collect(java.util.stream.Collectors.toList());
+        
+        if (documentIds.isEmpty()) {
+            Notification.show("No documents selected", 3000, Notification.Position.BOTTOM_START)
+                .addThemeVariants(NotificationVariant.LUMO_WARNING);
+            return;
+        }
+        
+        // Show progress notification
+        Notification.show("Extracting fields for " + documentIds.size() + " document(s)... This may take a while.", 
+            3000, Notification.Position.BOTTOM_START)
+            .addThemeVariants(NotificationVariant.LUMO_CONTRAST);
+        
+        // Process in background
+        java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            return fieldExtractionService.extractAndApplyFieldsForDocuments(documentIds);
+        }).thenAccept(results -> {
+            getUI().ifPresent(ui -> ui.access(() -> {
+                long successCount = results.values().stream()
+                    .filter(result -> result.equals("Success"))
+                    .count();
+                long skippedCount = results.values().stream()
+                    .filter(result -> result.startsWith("Skipped:"))
+                    .count();
+                long failedCount = results.values().stream()
+                    .filter(result -> result.startsWith("Failed:"))
+                    .count();
+                
+                String message;
+                if (successCount > 0 && failedCount == 0 && skippedCount == 0) {
+                    message = "Successfully extracted and applied fields for " + successCount + " document(s)";
+                    Notification.show(message, 5000, Notification.Position.BOTTOM_START)
+                        .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                } else if (successCount > 0) {
+                    message = "Extracted fields for " + successCount + " document(s)";
+                    if (skippedCount > 0) {
+                        message += ", " + skippedCount + " skipped (no text content)";
+                    }
+                    if (failedCount > 0) {
+                        message += ", " + failedCount + " failed";
+                    }
+                    Notification.show(message, 5000, Notification.Position.BOTTOM_START)
+                        .addThemeVariants(NotificationVariant.LUMO_CONTRAST);
+                } else {
+                    if (skippedCount > 0 && failedCount == 0) {
+                        message = "All " + skippedCount + " document(s) skipped (no text content available)";
+                        Notification.show(message, 5000, Notification.Position.BOTTOM_START)
+                            .addThemeVariants(NotificationVariant.LUMO_CONTRAST);
+                    } else {
+                        message = "Failed to extract fields";
+                        if (skippedCount > 0) {
+                            message += ": " + skippedCount + " skipped, ";
+                        }
+                        if (failedCount > 0) {
+                            message += failedCount + " failed";
+                        }
+                        Notification.show(message, 5000, Notification.Position.BOTTOM_START)
+                            .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                    }
+                }
+                
+                // Clear selection
+                resultsGrid.deselectAll();
+                ui.push();
+            }));
+        }).exceptionally(ex -> {
+            getUI().ifPresent(ui -> ui.access(() -> {
+                Notification.show("Error during batch extraction: " + ex.getMessage(), 
+                    5000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                ui.push();
+            }));
+            return null;
+        });
     }
 }
