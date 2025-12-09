@@ -377,12 +377,36 @@ public class DocumentDetailDialog extends Dialog {
             
             if (contentType != null && contentType.startsWith("text/")) {
                 String textContent = new String(contentBytes, java.nio.charset.StandardCharsets.UTF_8);
-                com.vaadin.flow.component.html.Pre pre = new com.vaadin.flow.component.html.Pre(textContent);
-                pre.getStyle()
-                    .set("white-space", "pre-wrap")
-                    .set("font-family", "monospace")
-                    .set("padding", "10px");
-                contentView.add(pre);
+                
+                // Check if it's markdown
+                if (contentType.equals("text/markdown") || content.getName().endsWith(".md")) {
+                    // Render markdown as HTML
+                    com.vaadin.flow.component.html.Div markdownDiv = new com.vaadin.flow.component.html.Div();
+                    markdownDiv.getElement().setProperty("innerHTML", convertMarkdownToHtml(textContent));
+                    markdownDiv.getStyle()
+                        .set("padding", "20px")
+                        .set("overflow", "auto");
+                    contentView.add(markdownDiv);
+                } else {
+                    // Plain text rendering
+                    com.vaadin.flow.component.html.Pre pre = new com.vaadin.flow.component.html.Pre(textContent);
+                    pre.getStyle()
+                        .set("white-space", "pre-wrap")
+                        .set("font-family", "monospace")
+                        .set("padding", "10px");
+                    contentView.add(pre);
+                }
+            } else if (contentType != null && contentType.equals("application/pdf")) {
+                // Display PDF using iframe with base64 data URI
+                String base64 = java.util.Base64.getEncoder().encodeToString(contentBytes);
+                String dataUri = "data:application/pdf;base64," + base64;
+                
+                com.vaadin.flow.component.html.IFrame iframe = new com.vaadin.flow.component.html.IFrame(dataUri);
+                iframe.setSizeFull();
+                iframe.getStyle()
+                    .set("border", "none")
+                    .set("min-height", "600px");
+                contentView.add(iframe);
             } else {
                 Span unsupportedMsg = new Span("Content type not supported for inline viewing: " + contentType);
                 contentView.add(unsupportedMsg);
@@ -400,6 +424,121 @@ public class DocumentDetailDialog extends Dialog {
         
         viewDialog.add(layout);
         viewDialog.open();
+    }
+    
+    /**
+     * Simple markdown to HTML converter
+     * Handles basic markdown syntax: headers, bold, italic, links, lists, code blocks
+     */
+    private String convertMarkdownToHtml(String markdown) {
+        if (markdown == null || markdown.isEmpty()) {
+            return "";
+        }
+        
+        StringBuilder html = new StringBuilder();
+        String[] lines = markdown.split("\n");
+        boolean inCodeBlock = false;
+        boolean inList = false;
+        
+        for (String line : lines) {
+            // Code blocks
+            if (line.trim().startsWith("```")) {
+                if (inCodeBlock) {
+                    html.append("</pre></code>");
+                    inCodeBlock = false;
+                } else {
+                    html.append("<code><pre style='background-color: #f5f5f5; padding: 10px; border-radius: 4px;'>");
+                    inCodeBlock = true;
+                }
+                continue;
+            }
+            
+            if (inCodeBlock) {
+                html.append(escapeHtml(line)).append("\n");
+                continue;
+            }
+            
+            // Headers
+            if (line.startsWith("# ")) {
+                html.append("<h1>").append(escapeHtml(line.substring(2))).append("</h1>");
+            } else if (line.startsWith("## ")) {
+                html.append("<h2>").append(escapeHtml(line.substring(3))).append("</h2>");
+            } else if (line.startsWith("### ")) {
+                html.append("<h3>").append(escapeHtml(line.substring(4))).append("</h3>");
+            } else if (line.startsWith("#### ")) {
+                html.append("<h4>").append(escapeHtml(line.substring(5))).append("</h4>");
+            } else if (line.startsWith("##### ")) {
+                html.append("<h5>").append(escapeHtml(line.substring(6))).append("</h5>");
+            } else if (line.startsWith("###### ")) {
+                html.append("<h6>").append(escapeHtml(line.substring(7))).append("</h6>");
+            } 
+            // Lists
+            else if (line.trim().startsWith("- ") || line.trim().startsWith("* ")) {
+                if (!inList) {
+                    html.append("<ul>");
+                    inList = true;
+                }
+                html.append("<li>").append(processInlineMarkdown(line.trim().substring(2))).append("</li>");
+            } else {
+                if (inList) {
+                    html.append("</ul>");
+                    inList = false;
+                }
+                
+                if (line.trim().isEmpty()) {
+                    html.append("<br>");
+                } else {
+                    html.append("<p>").append(processInlineMarkdown(line)).append("</p>");
+                }
+            }
+        }
+        
+        if (inCodeBlock) {
+            html.append("</pre></code>");
+        }
+        if (inList) {
+            html.append("</ul>");
+        }
+        
+        return html.toString();
+    }
+    
+    /**
+     * Process inline markdown: bold, italic, code, links
+     */
+    private String processInlineMarkdown(String text) {
+        text = escapeHtml(text);
+        
+        // Bold: **text** or __text__
+        text = text.replaceAll("\\*\\*(.+?)\\*\\*", "<strong>$1</strong>");
+        text = text.replaceAll("__(.+?)__", "<strong>$1</strong>");
+        
+        // Italic: *text* or _text_
+        text = text.replaceAll("\\*(.+?)\\*", "<em>$1</em>");
+        text = text.replaceAll("_(.+?)_", "<em>$1</em>");
+        
+        // Inline code: `code`
+        text = text.replaceAll("`(.+?)`", "<code style='background-color: #f5f5f5; padding: 2px 4px; border-radius: 3px;'>$1</code>");
+        
+        // Links: [text](url)
+        text = text.replaceAll("\\[(.+?)\\]\\((.+?)\\)", "<a href='$2' target='_blank'>$1</a>");
+        
+        return text;
+    }
+    
+    /**
+     * Escape HTML special characters
+     */
+    private String escapeHtml(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&#39;");
     }
     
     private void openPluginDialog(Document document, PluginInfoDTO pluginInfo, Content selectedContent) {
