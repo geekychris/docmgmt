@@ -19,7 +19,7 @@ import java.time.LocalDate;
 @SuperBuilder(toBuilder = true)
 @EqualsAndHashCode(callSuper = true)
 @ToString(callSuper = true)
-public class Manual extends Document {
+public class Manual extends Document implements DocumentFieldExtractor {
     
     {
         setDocumentType(DocumentType.MANUAL);
@@ -92,6 +92,53 @@ public class Manual extends Document {
             manualTarget.setProductName(this.getProductName());
             manualTarget.setLastReviewDate(this.getLastReviewDate());
             manualTarget.setTargetAudience(this.getTargetAudience());
+        }
+    }
+    
+    @Override
+    public String getFieldExtractionRules() {
+        return """
+            
+            ADDITIONAL REQUIRED FIELDS FOR MANUAL TYPE (include these in your JSON):
+            - manualVersion: Version number like "1.0", "2.3" (string)
+            - productName: Name of the product or system being documented (string)
+            - lastReviewDate: When manual was last reviewed in YYYY-MM-DD format (string)
+            - targetAudience: Who should use this manual, like "End Users", "Administrators", "Developers" (string)
+            
+            Extract these fields from the content when available, or provide reasonable inferences based on the document context.
+            """;
+    }
+    
+    @Override
+    public java.util.Map<String, Object> getCurrentFieldValues() {
+        java.util.Map<String, Object> fields = new java.util.HashMap<>();
+        fields.put("manualVersion", manualVersion);
+        fields.put("productName", productName);
+        fields.put("lastReviewDate", lastReviewDate);
+        fields.put("targetAudience", targetAudience);
+        return fields;
+    }
+    
+    @Override
+    public void applyExtractedFields(java.util.Map<String, Object> extractedFields) {
+        if (extractedFields.containsKey("manualVersion")) {
+            this.manualVersion = (String) extractedFields.get("manualVersion");
+        }
+        if (extractedFields.containsKey("productName")) {
+            this.productName = (String) extractedFields.get("productName");
+        }
+        if (extractedFields.containsKey("lastReviewDate")) {
+            Object dateValue = extractedFields.get("lastReviewDate");
+            if (dateValue instanceof String) {
+                try {
+                    this.lastReviewDate = java.time.LocalDate.parse((String) dateValue);
+                } catch (Exception e) {
+                    // Invalid date format, skip
+                }
+            }
+        }
+        if (extractedFields.containsKey("targetAudience")) {
+            this.targetAudience = (String) extractedFields.get("targetAudience");
         }
     }
 }

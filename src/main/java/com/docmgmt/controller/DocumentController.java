@@ -1,8 +1,10 @@
 package com.docmgmt.controller;
 
 import com.docmgmt.dto.DocumentDTO;
+import com.docmgmt.dto.FieldSuggestionDTO;
 import com.docmgmt.model.Document;
 import com.docmgmt.service.DocumentService;
+import com.docmgmt.service.DocumentFieldExtractionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -32,9 +35,12 @@ public class DocumentController extends AbstractSysObjectController<Document, Do
 
     private static final Logger logger = LoggerFactory.getLogger(DocumentController.class);
     
+    private final DocumentFieldExtractionService fieldExtractionService;
+    
     @Autowired
-    public DocumentController(DocumentService service) {
+    public DocumentController(DocumentService service, DocumentFieldExtractionService fieldExtractionService) {
         super(service);
+        this.fieldExtractionService = fieldExtractionService;
     }
     
     @Override
@@ -131,6 +137,100 @@ public class DocumentController extends AbstractSysObjectController<Document, Do
         } catch (Exception e) {
             logger.error("Error searching documents by keywords: {}", keywords, e);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error searching documents", e);
+        }
+    }
+    
+    /**
+     * Extract field suggestions for a document using AI
+     * @param id The document ID
+     * @return Field suggestions including current and suggested values
+     */
+    @Operation(
+        summary = "Extract field suggestions using AI",
+        description = "Analyze document content using AI (Ollama) to suggest metadata fields like description, keywords, tags, and document type"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Field suggestions extracted successfully"),
+        @ApiResponse(responseCode = "400", description = "Document has no text content for extraction"),
+        @ApiResponse(responseCode = "404", description = "Document not found"),
+        @ApiResponse(responseCode = "500", description = "Error during field extraction")
+    })
+    @GetMapping("/{id}/extract-fields")
+    public ResponseEntity<FieldSuggestionDTO> extractFields(
+            @Parameter(description = "Document ID", required = true)
+            @PathVariable Long id) {
+        try {
+            FieldSuggestionDTO suggestions = fieldExtractionService.extractFieldsFromDocument(id);
+            return ResponseEntity.ok(suggestions);
+        } catch (EntityNotFoundException e) {
+            logger.error("Document not found: {}", id, e);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found", e);
+        } catch (IllegalArgumentException e) {
+            logger.error("Invalid request for document {}: {}", id, e.getMessage());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
+        } catch (Exception e) {
+            logger.error("Error extracting fields for document: {}", id, e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error extracting fields", e);
+        }
+    }
+    
+    /**
+     * Apply selected field suggestions to a document
+     * @param id The document ID
+     * @param request Request containing fields to apply and suggested values
+     * @return Updated document DTO
+     */
+    @Operation(
+        summary = "Apply field suggestions to document",
+        description = "Update document fields with AI-suggested values based on user selection"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Fields applied successfully"),
+        @ApiResponse(responseCode = "404", description = "Document not found"),
+        @ApiResponse(responseCode = "500", description = "Error applying fields")
+    })
+    @PostMapping("/{id}/apply-fields")
+    public ResponseEntity<DocumentDTO> applyFields(
+            @Parameter(description = "Document ID", required = true)
+            @PathVariable Long id,
+            @RequestBody ApplyFieldsRequest request) {
+        try {
+            Document updated = fieldExtractionService.applyFieldSuggestions(
+                id, 
+                request.getFieldsToApply(), 
+                request.getSuggestedFields()
+            );
+            return ResponseEntity.ok(toDTO(updated));
+        } catch (EntityNotFoundException e) {
+            logger.error("Document not found: {}", id, e);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found", e);
+        } catch (Exception e) {
+            logger.error("Error applying fields for document: {}", id, e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error applying fields", e);
+        }
+    }
+    
+    /**
+     * Request body for applying field suggestions
+     */
+    public static class ApplyFieldsRequest {
+        private Map<String, Boolean> fieldsToApply;
+        private FieldSuggestionDTO.DocumentFields suggestedFields;
+        
+        public Map<String, Boolean> getFieldsToApply() {
+            return fieldsToApply;
+        }
+        
+        public void setFieldsToApply(Map<String, Boolean> fieldsToApply) {
+            this.fieldsToApply = fieldsToApply;
+        }
+        
+        public FieldSuggestionDTO.DocumentFields getSuggestedFields() {
+            return suggestedFields;
+        }
+        
+        public void setSuggestedFields(FieldSuggestionDTO.DocumentFields suggestedFields) {
+            this.suggestedFields = suggestedFields;
         }
     }
 }

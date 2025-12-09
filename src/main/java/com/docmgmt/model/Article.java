@@ -19,7 +19,7 @@ import java.time.LocalDate;
 @SuperBuilder(toBuilder = true)
 @EqualsAndHashCode(callSuper = true)
 @ToString(callSuper = true)
-public class Article extends Document {
+public class Article extends Document implements DocumentFieldExtractor {
     
     {
         setDocumentType(DocumentType.ARTICLE);
@@ -119,6 +119,63 @@ public class Article extends Document {
             articleTarget.setIssue(this.getIssue());
             articleTarget.setPages(this.getPages());
             articleTarget.setDoi(this.getDoi());
+        }
+    }
+    
+    @Override
+    public String getFieldExtractionRules() {
+        return """
+            
+            ADDITIONAL REQUIRED FIELDS FOR ARTICLE TYPE (include these in your JSON):
+            - journal: Name of the journal or publication (string)
+            - volume: Volume number (string)
+            - issue: Issue number (string)  
+            - pages: Page range like "10-25" (string)
+            - doi: Digital Object Identifier if available (string)
+            - publicationDate: Publication date in YYYY-MM-DD format (string)
+            
+            Extract these fields from the content when available, or provide reasonable inferences.
+            """;
+    }
+    
+    @Override
+    public java.util.Map<String, Object> getCurrentFieldValues() {
+        java.util.Map<String, Object> fields = new java.util.HashMap<>();
+        fields.put("journal", journal);
+        fields.put("volume", volume);
+        fields.put("issue", issue);
+        fields.put("pages", pages);
+        fields.put("doi", doi);
+        fields.put("publicationDate", publicationDate);
+        return fields;
+    }
+    
+    @Override
+    public void applyExtractedFields(java.util.Map<String, Object> extractedFields) {
+        if (extractedFields.containsKey("journal")) {
+            this.journal = (String) extractedFields.get("journal");
+        }
+        if (extractedFields.containsKey("volume")) {
+            this.volume = (String) extractedFields.get("volume");
+        }
+        if (extractedFields.containsKey("issue")) {
+            this.issue = (String) extractedFields.get("issue");
+        }
+        if (extractedFields.containsKey("pages")) {
+            this.pages = (String) extractedFields.get("pages");
+        }
+        if (extractedFields.containsKey("doi")) {
+            this.doi = (String) extractedFields.get("doi");
+        }
+        if (extractedFields.containsKey("publicationDate")) {
+            Object dateValue = extractedFields.get("publicationDate");
+            if (dateValue instanceof String) {
+                try {
+                    this.publicationDate = java.time.LocalDate.parse((String) dateValue);
+                } catch (Exception e) {
+                    // Invalid date format, skip
+                }
+            }
         }
     }
 }

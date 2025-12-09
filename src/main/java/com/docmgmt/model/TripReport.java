@@ -21,7 +21,7 @@ import java.util.Set;
 @SuperBuilder(toBuilder = true)
 @EqualsAndHashCode(callSuper = true)
 @ToString(callSuper = true)
-public class TripReport extends Document {
+public class TripReport extends Document implements DocumentFieldExtractor {
     
     {
         setDocumentType(DocumentType.TRIP_REPORT);
@@ -153,6 +153,110 @@ public class TripReport extends Document {
             if (this.getAttendees() != null && !this.getAttendees().isEmpty()) {
                 reportTarget.setAttendees(new HashSet<>(this.getAttendees()));
             }
+        }
+    }
+    
+    @Override
+    public String getFieldExtractionRules() {
+        return """
+            
+            ADDITIONAL REQUIRED FIELDS FOR TRIP_REPORT TYPE (include these in your JSON):
+            - destination: Trip destination city/location (string)
+            - tripStartDate: Trip start date in YYYY-MM-DD format (string)
+            - tripEndDate: Trip end date in YYYY-MM-DD format (string)
+            - purpose: Purpose or objective of the business trip (string)
+            - budgetAmount: Budgeted amount as a number without currency symbols (number)
+            - actualAmount: Actual spent amount as a number without currency symbols (number)
+            - attendees: Array of names of people who attended/traveled (array of strings)
+            - summary: Brief summary of trip outcomes and activities (string)
+            - followUpActions: Required follow-up actions or next steps (string)
+            
+            Extract these from the report body, especially the header/intro and conclusion sections.
+            For amounts, extract only numeric values (e.g., 5000 not "$5,000").
+            """;
+    }
+    
+    @Override
+    public java.util.Map<String, Object> getCurrentFieldValues() {
+        java.util.Map<String, Object> fields = new java.util.HashMap<>();
+        fields.put("destination", destination);
+        fields.put("tripStartDate", tripStartDate);
+        fields.put("tripEndDate", tripEndDate);
+        fields.put("purpose", purpose);
+        fields.put("budgetAmount", budgetAmount);
+        fields.put("actualAmount", actualAmount);
+        fields.put("attendees", attendees);
+        fields.put("summary", summary);
+        fields.put("followUpActions", followUpActions);
+        return fields;
+    }
+    
+    @Override
+    public void applyExtractedFields(java.util.Map<String, Object> extractedFields) {
+        if (extractedFields.containsKey("destination")) {
+            this.destination = (String) extractedFields.get("destination");
+        }
+        if (extractedFields.containsKey("tripStartDate")) {
+            Object dateValue = extractedFields.get("tripStartDate");
+            if (dateValue instanceof String) {
+                try {
+                    this.tripStartDate = java.time.LocalDate.parse((String) dateValue);
+                } catch (Exception e) {
+                    // Invalid date format, skip
+                }
+            }
+        }
+        if (extractedFields.containsKey("tripEndDate")) {
+            Object dateValue = extractedFields.get("tripEndDate");
+            if (dateValue instanceof String) {
+                try {
+                    this.tripEndDate = java.time.LocalDate.parse((String) dateValue);
+                } catch (Exception e) {
+                    // Invalid date format, skip
+                }
+            }
+        }
+        if (extractedFields.containsKey("purpose")) {
+            this.purpose = (String) extractedFields.get("purpose");
+        }
+        if (extractedFields.containsKey("budgetAmount")) {
+            Object valueObj = extractedFields.get("budgetAmount");
+            if (valueObj instanceof Number) {
+                this.budgetAmount = ((Number) valueObj).doubleValue();
+            } else if (valueObj instanceof String) {
+                try {
+                    this.budgetAmount = Double.parseDouble((String) valueObj);
+                } catch (Exception e) {
+                    // Invalid number, skip
+                }
+            }
+        }
+        if (extractedFields.containsKey("actualAmount")) {
+            Object valueObj = extractedFields.get("actualAmount");
+            if (valueObj instanceof Number) {
+                this.actualAmount = ((Number) valueObj).doubleValue();
+            } else if (valueObj instanceof String) {
+                try {
+                    this.actualAmount = Double.parseDouble((String) valueObj);
+                } catch (Exception e) {
+                    // Invalid number, skip
+                }
+            }
+        }
+        if (extractedFields.containsKey("attendees")) {
+            Object attendeesValue = extractedFields.get("attendees");
+            if (attendeesValue instanceof java.util.Collection) {
+                this.attendees = new HashSet<>();
+                for (Object attendee : (java.util.Collection<?>) attendeesValue) {
+                    this.attendees.add(attendee.toString());
+                }
+            }
+        }
+        if (extractedFields.containsKey("summary")) {
+            this.summary = (String) extractedFields.get("summary");
+        }
+        if (extractedFields.containsKey("followUpActions")) {
+            this.followUpActions = (String) extractedFields.get("followUpActions");
         }
     }
 }

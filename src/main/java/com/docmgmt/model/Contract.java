@@ -21,7 +21,7 @@ import java.util.Set;
 @SuperBuilder(toBuilder = true)
 @EqualsAndHashCode(callSuper = true)
 @ToString(callSuper = true)
-public class Contract extends Document {
+public class Contract extends Document implements DocumentFieldExtractor {
     
     {
         setDocumentType(DocumentType.CONTRACT);
@@ -129,6 +129,82 @@ public class Contract extends Document {
             
             if (this.getParties() != null && !this.getParties().isEmpty()) {
                 contractTarget.setParties(new HashSet<>(this.getParties()));
+            }
+        }
+    }
+    
+    @Override
+    public String getFieldExtractionRules() {
+        return """
+            
+            ADDITIONAL REQUIRED FIELDS FOR CONTRACT TYPE (include these in your JSON):
+            - contractNumber: Contract identification number, reference, or ID (string)
+            - effectiveDate: Contract start or effective date in YYYY-MM-DD format (string)
+            - expirationDate: Contract end or expiration date in YYYY-MM-DD format (string)
+            - parties: Array of party names/organizations involved in the contract (array of strings)
+            - contractValue: Total monetary value as a number without currency symbols (number)
+            
+            Extract these from contract headers, terms, or signature sections.
+            For parties, include all mentioned organizations or individuals.
+            For contractValue, extract only the numeric amount (e.g., 50000 not "$50,000").
+            """;
+    }
+    
+    @Override
+    public java.util.Map<String, Object> getCurrentFieldValues() {
+        java.util.Map<String, Object> fields = new java.util.HashMap<>();
+        fields.put("contractNumber", contractNumber);
+        fields.put("effectiveDate", effectiveDate);
+        fields.put("expirationDate", expirationDate);
+        fields.put("parties", parties);
+        fields.put("contractValue", contractValue);
+        return fields;
+    }
+    
+    @Override
+    public void applyExtractedFields(java.util.Map<String, Object> extractedFields) {
+        if (extractedFields.containsKey("contractNumber")) {
+            this.contractNumber = (String) extractedFields.get("contractNumber");
+        }
+        if (extractedFields.containsKey("effectiveDate")) {
+            Object dateValue = extractedFields.get("effectiveDate");
+            if (dateValue instanceof String) {
+                try {
+                    this.effectiveDate = java.time.LocalDate.parse((String) dateValue);
+                } catch (Exception e) {
+                    // Invalid date format, skip
+                }
+            }
+        }
+        if (extractedFields.containsKey("expirationDate")) {
+            Object dateValue = extractedFields.get("expirationDate");
+            if (dateValue instanceof String) {
+                try {
+                    this.expirationDate = java.time.LocalDate.parse((String) dateValue);
+                } catch (Exception e) {
+                    // Invalid date format, skip
+                }
+            }
+        }
+        if (extractedFields.containsKey("parties")) {
+            Object partiesValue = extractedFields.get("parties");
+            if (partiesValue instanceof java.util.Collection) {
+                this.parties = new HashSet<>();
+                for (Object party : (java.util.Collection<?>) partiesValue) {
+                    this.parties.add(party.toString());
+                }
+            }
+        }
+        if (extractedFields.containsKey("contractValue")) {
+            Object valueObj = extractedFields.get("contractValue");
+            if (valueObj instanceof Number) {
+                this.contractValue = ((Number) valueObj).doubleValue();
+            } else if (valueObj instanceof String) {
+                try {
+                    this.contractValue = Double.parseDouble((String) valueObj);
+                } catch (Exception e) {
+                    // Invalid number format, skip
+                }
             }
         }
     }

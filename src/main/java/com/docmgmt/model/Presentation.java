@@ -19,7 +19,7 @@ import java.time.LocalDate;
 @SuperBuilder(toBuilder = true)
 @EqualsAndHashCode(callSuper = true)
 @ToString(callSuper = true)
-public class Presentation extends Document {
+public class Presentation extends Document implements DocumentFieldExtractor {
     
     {
         setDocumentType(DocumentType.PRESENTATION);
@@ -88,6 +88,63 @@ public class Presentation extends Document {
             presentationTarget.setVenue(this.getVenue());
             presentationTarget.setAudience(this.getAudience());
             presentationTarget.setDurationMinutes(this.getDurationMinutes());
+        }
+    }
+    
+    @Override
+    public String getFieldExtractionRules() {
+        return """
+            
+            ADDITIONAL REQUIRED FIELDS FOR PRESENTATION TYPE (include these in your JSON):
+            - presentationDate: Date when presentation was/will be given in YYYY-MM-DD format (string)
+            - venue: Location, conference, or event name where presented (string)
+            - audience: Target audience description like "Technical Team", "Executives", "Conference Attendees" (string)
+            - durationMinutes: Presentation length in minutes as a number (number)
+            
+            Extract these from the presentation title slide, footer, or context.
+            For durationMinutes, estimate based on slide count if not explicit (e.g., ~1-2 minutes per slide).
+            """;
+    }
+    
+    @Override
+    public java.util.Map<String, Object> getCurrentFieldValues() {
+        java.util.Map<String, Object> fields = new java.util.HashMap<>();
+        fields.put("presentationDate", presentationDate);
+        fields.put("venue", venue);
+        fields.put("audience", audience);
+        fields.put("durationMinutes", durationMinutes);
+        return fields;
+    }
+    
+    @Override
+    public void applyExtractedFields(java.util.Map<String, Object> extractedFields) {
+        if (extractedFields.containsKey("presentationDate")) {
+            Object dateValue = extractedFields.get("presentationDate");
+            if (dateValue instanceof String) {
+                try {
+                    this.presentationDate = java.time.LocalDate.parse((String) dateValue);
+                } catch (Exception e) {
+                    // Invalid date format, skip
+                }
+            }
+        }
+        if (extractedFields.containsKey("venue")) {
+            this.venue = (String) extractedFields.get("venue");
+        }
+        if (extractedFields.containsKey("audience")) {
+            this.audience = (String) extractedFields.get("audience");
+        }
+        if (extractedFields.containsKey("durationMinutes")) {
+            Object durationObj = extractedFields.get("durationMinutes");
+            if (durationObj instanceof Number) {
+                this.durationMinutes = ((Number) durationObj).intValue();
+            } else if (durationObj instanceof String) {
+                try {
+                    this.durationMinutes = Integer.parseInt((String) durationObj);
+                } catch (Exception e) {
+                    // Invalid number format, skip
+                }
+            }
         }
     }
 }

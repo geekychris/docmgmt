@@ -1,9 +1,11 @@
 package com.docmgmt.ui.views;
 
+import com.docmgmt.dto.FieldSuggestionDTO;
 import com.docmgmt.model.*;
 import com.docmgmt.model.Document.DocumentType;
 import com.docmgmt.service.ContentService;
 import com.docmgmt.service.DocumentService;
+import com.docmgmt.service.DocumentFieldExtractionService;
 import com.docmgmt.service.FileStoreService;
 import com.docmgmt.service.FolderService;
 import com.docmgmt.service.UserService;
@@ -48,6 +50,7 @@ import java.io.File;
 import java.io.InputStream;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -63,6 +66,7 @@ public class FolderView extends VerticalLayout {
     private final ContentService contentService;
     private final FileStoreService fileStoreService;
     private final TransformerRegistry transformerRegistry;
+    private final DocumentFieldExtractionService fieldExtractionService;
     
     private TreeGrid<Folder> folderTree;
     private Grid<SysObject> itemsGrid;
@@ -83,13 +87,14 @@ public class FolderView extends VerticalLayout {
     @Autowired
     public FolderView(FolderService folderService, DocumentService documentService, UserService userService, 
                      ContentService contentService, FileStoreService fileStoreService,
-                     TransformerRegistry transformerRegistry) {
+                     TransformerRegistry transformerRegistry, DocumentFieldExtractionService fieldExtractionService) {
         this.folderService = folderService;
         this.documentService = documentService;
         this.userService = userService;
         this.contentService = contentService;
         this.fileStoreService = fileStoreService;
         this.transformerRegistry = transformerRegistry;
+        this.fieldExtractionService = fieldExtractionService;
         
         addClassName("folder-view");
         setSizeFull();
@@ -1008,8 +1013,27 @@ public class FolderView extends VerticalLayout {
                     .isPresent());
         });
         
+        Button extractFieldsButton = new Button("Extract Fields (AI)", new Icon(VaadinIcon.LIGHTBULB));
+        extractFieldsButton.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
+        
+        // Check if document has text content
+        boolean hasTextContent = reloadedDoc.getContents() != null && reloadedDoc.getContents().stream()
+            .anyMatch(c -> (c.getContentType() != null && 
+                          (c.getContentType().startsWith("text/") || 
+                           ("text/plain".equals(c.getContentType()) && c.isIndexable()))));
+        
+        extractFieldsButton.setEnabled(hasTextContent);
+        if (!hasTextContent) {
+            extractFieldsButton.setTooltipText("No text content available. Upload a text file or transform PDF to text first.");
+        }
+        
+        extractFieldsButton.addClickListener(e -> {
+            dialog.close();
+            openFieldExtractionDialog(reloadedDoc);
+        });
+        
         HorizontalLayout contentToolbar = new HorizontalLayout(
-            viewContentButton, uploadContentButton, transformContentButton);
+            viewContentButton, uploadContentButton, transformContentButton, extractFieldsButton);
         
         // Version control buttons
         Button createMajorVersionButton = new Button("Create Major Version", new Icon(VaadinIcon.PLUS_CIRCLE));
@@ -1569,6 +1593,287 @@ public class FolderView extends VerticalLayout {
         
         uploadDialog.add(dialogLayout);
         uploadDialog.open();
+    }
+    
+    /**
+     * Open field extraction dialog for AI-powered field suggestions
+     */
+    private void openFieldExtractionDialog(Document document) {
+        Dialog dialog = new Dialog();
+        dialog.setWidth("900px");
+        dialog.setHeight("80vh");
+        
+        H2 title = new H2("AI Field Extraction: " + document.getName());
+        
+        VerticalLayout loadingLayout = new VerticalLayout();
+        loadingLayout.setSizeFull();
+        loadingLayout.setAlignItems(FlexComponent.Alignment.CENTER);
+        loadingLayout.setJustifyContentMode(FlexComponent.JustifyContentMode.CENTER);
+        
+        Span loadingText = new Span("Analyzing document content with AI...");
+        loadingText.getStyle().set("font-size", "var(--lumo-font-size-l)");
+        loadingLayout.add(loadingText);
+        
+        dialog.add(loadingLayout);
+        dialog.open();
+        
+        // Perform extraction asynchronously using CompletableFuture
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                return fieldExtractionService.extractFieldsFromDocument(document.getId());
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }).thenAccept(suggestions -> {
+            // Update UI on UI thread
+            getUI().ifPresent(ui -> ui.access(() -> {
+                dialog.removeAll();
+                showFieldSuggestions(dialog, document, suggestions);
+                ui.push(); // Push the updates to the client
+            }));
+        }).exceptionally(ex -> {
+            logger.error("Failed to extract fields: {}", ex.getMessage(), ex);
+            getUI().ifPresent(ui -> ui.access(() -> {
+                dialog.close();
+                String errorMsg = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
+                Notification.show("Failed to extract fields: " + errorMsg, 
+                    5000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                ui.push(); // Push the updates to the client
+            }));
+            return null;
+        });
+    }
+    
+    /**
+     * Show field suggestions in dialog
+     */
+    private void showFieldSuggestions(Dialog dialog, Document document, FieldSuggestionDTO suggestions) {
+        H2 title = new H2("Field Suggestions: " + document.getName());
+        
+        Span helpText = new Span("Select which AI-suggested fields to apply to the document:");
+        helpText.getStyle()
+            .set("color", "var(--lumo-secondary-text-color)")
+            .set("font-size", "var(--lumo-font-size-m)")
+            .set("margin-bottom", "10px");
+        
+        // Create comparison grid
+        VerticalLayout comparisonLayout = new VerticalLayout();
+        comparisonLayout.setPadding(false);
+        comparisonLayout.setSpacing(true);
+        comparisonLayout.getStyle().set("overflow-y", "auto");
+        
+        Map<String, Checkbox> checkboxMap = new HashMap<>();
+        
+        // Description
+        checkboxMap.put("description", addFieldComparison(
+            comparisonLayout, 
+            "Description", 
+            suggestions.getCurrentFields().getDescription(),
+            suggestions.getSuggestedFields().getDescription()
+        ));
+        
+        // Keywords
+        checkboxMap.put("keywords", addFieldComparison(
+            comparisonLayout, 
+            "Keywords", 
+            suggestions.getCurrentFields().getKeywords(),
+            suggestions.getSuggestedFields().getKeywords()
+        ));
+        
+        // Tags
+        String currentTags = suggestions.getCurrentFields().getTags() != null && !suggestions.getCurrentFields().getTags().isEmpty()
+            ? String.join(", ", suggestions.getCurrentFields().getTags())
+            : "(none)";
+        String suggestedTags = suggestions.getSuggestedFields().getTags() != null && !suggestions.getSuggestedFields().getTags().isEmpty()
+            ? String.join(", ", suggestions.getSuggestedFields().getTags())
+            : "(none)";
+        checkboxMap.put("tags", addFieldComparison(
+            comparisonLayout, 
+            "Tags", 
+            currentTags,
+            suggestedTags
+        ));
+        
+        // Document Type
+        String currentType = suggestions.getCurrentFields().getDocumentType() != null
+            ? suggestions.getCurrentFields().getDocumentType().toString()
+            : "(none)";
+        String suggestedType = suggestions.getSuggestedFields().getDocumentType() != null
+            ? suggestions.getSuggestedFields().getDocumentType().toString()
+            : "(none)";
+        checkboxMap.put("documentType", addFieldComparison(
+            comparisonLayout, 
+            "Document Type", 
+            currentType,
+            suggestedType
+        ));
+        
+        // Add type-specific fields
+        if (suggestions.getSuggestedFields().getTypeSpecificFields() != null && 
+            !suggestions.getSuggestedFields().getTypeSpecificFields().isEmpty()) {
+            
+            // Add separator
+            H3 typeSpecificHeader = new H3("Type-Specific Fields");
+            typeSpecificHeader.getStyle().set("margin-top", "20px").set("margin-bottom", "10px");
+            comparisonLayout.add(typeSpecificHeader);
+            
+            // Display each type-specific field
+            suggestions.getSuggestedFields().getTypeSpecificFields().forEach((fieldName, suggestedValue) -> {
+                Object currentValue = null;
+                if (suggestions.getCurrentFields().getTypeSpecificFields() != null) {
+                    currentValue = suggestions.getCurrentFields().getTypeSpecificFields().get(fieldName);
+                }
+                
+                String currentStr = formatFieldValue(currentValue);
+                String suggestedStr = formatFieldValue(suggestedValue);
+                
+                checkboxMap.put(fieldName, addFieldComparison(
+                    comparisonLayout,
+                    formatFieldName(fieldName),
+                    currentStr,
+                    suggestedStr
+                ));
+            });
+        }
+        
+        // Buttons
+        Button cancelButton = new Button("Cancel", e -> dialog.close());
+        
+        Button applyButton = new Button("Apply Selected", new Icon(VaadinIcon.CHECK), e -> {
+            try {
+                // Build map of selected fields
+                Map<String, Boolean> fieldsToApply = new HashMap<>();
+                checkboxMap.forEach((field, checkbox) -> {
+                    fieldsToApply.put(field, checkbox.getValue());
+                });
+                
+                // Apply suggestions
+                fieldExtractionService.applyFieldSuggestions(
+                    document.getId(),
+                    fieldsToApply,
+                    suggestions.getSuggestedFields()
+                );
+                
+                Notification.show("Fields applied successfully", 
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                
+                dialog.close();
+                refreshFolderContents();
+                
+            } catch (Exception ex) {
+                Notification.show("Failed to apply fields: " + ex.getMessage(), 
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            }
+        });
+        applyButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        
+        HorizontalLayout buttons = new HorizontalLayout(cancelButton, applyButton);
+        buttons.setJustifyContentMode(FlexComponent.JustifyContentMode.END);
+        buttons.setWidthFull();
+        
+        VerticalLayout layout = new VerticalLayout(
+            title, helpText, new Hr(), comparisonLayout, new Hr(), buttons
+        );
+        layout.setPadding(true);
+        layout.setSpacing(true);
+        
+        dialog.add(layout);
+    }
+    
+    /**
+     * Add a field comparison row with checkbox
+     */
+    private Checkbox addFieldComparison(VerticalLayout container, String fieldName, 
+                                       String currentValue, String suggestedValue) {
+        VerticalLayout fieldLayout = new VerticalLayout();
+        fieldLayout.setPadding(false);
+        fieldLayout.setSpacing(false);
+        fieldLayout.getStyle()
+            .set("border", "1px solid var(--lumo-contrast-20pct)")
+            .set("border-radius", "4px")
+            .set("padding", "10px")
+            .set("background-color", "var(--lumo-contrast-5pct)");
+        
+        Checkbox checkbox = new Checkbox(fieldName);
+        checkbox.getStyle().set("font-weight", "bold");
+        
+        // Current value
+        HorizontalLayout currentRow = new HorizontalLayout();
+        currentRow.setSpacing(true);
+        Span currentLabel = new Span("Current:");
+        currentLabel.getStyle()
+            .set("color", "var(--lumo-secondary-text-color)")
+            .set("font-weight", "600")
+            .set("min-width", "100px");
+        Span currentText = new Span(currentValue != null && !currentValue.isEmpty() ? currentValue : "(empty)");
+        currentText.getStyle()
+            .set("font-style", currentValue == null || currentValue.isEmpty() ? "italic" : "normal")
+            .set("color", currentValue == null || currentValue.isEmpty() ? "var(--lumo-disabled-text-color)" : "var(--lumo-body-text-color)");
+        currentRow.add(currentLabel, currentText);
+        
+        // Suggested value
+        HorizontalLayout suggestedRow = new HorizontalLayout();
+        suggestedRow.setSpacing(true);
+        Span suggestedLabel = new Span("Suggested:");
+        suggestedLabel.getStyle()
+            .set("color", "var(--lumo-primary-text-color)")
+            .set("font-weight", "600")
+            .set("min-width", "100px");
+        Span suggestedText = new Span(suggestedValue != null && !suggestedValue.isEmpty() ? suggestedValue : "(empty)");
+        suggestedText.getStyle()
+            .set("font-style", suggestedValue == null || suggestedValue.isEmpty() ? "italic" : "normal")
+            .set("color", suggestedValue == null || suggestedValue.isEmpty() ? "var(--lumo-disabled-text-color)" : "var(--lumo-success-color)")
+            .set("font-weight", "500");
+        suggestedRow.add(suggestedLabel, suggestedText);
+        
+        fieldLayout.add(checkbox, currentRow, suggestedRow);
+        container.add(fieldLayout);
+        
+        return checkbox;
+    }
+    
+    /**
+     * Format field name from camelCase to Title Case
+     */
+    private String formatFieldName(String fieldName) {
+        if (fieldName == null || fieldName.isEmpty()) {
+            return fieldName;
+        }
+        // Convert camelCase to Title Case with spaces
+        return fieldName.replaceAll("([A-Z])", " $1")
+                        .replaceAll("([a-z])([A-Z])", "$1 $2")
+                        .trim()
+                        .substring(0, 1).toUpperCase() + 
+               fieldName.replaceAll("([A-Z])", " $1")
+                        .replaceAll("([a-z])([A-Z])", "$1 $2")
+                        .trim()
+                        .substring(1);
+    }
+    
+    /**
+     * Format field value to display string
+     */
+    private String formatFieldValue(Object value) {
+        if (value == null) {
+            return "(empty)";
+        }
+        if (value instanceof java.util.Collection) {
+            java.util.Collection<?> collection = (java.util.Collection<?>) value;
+            if (collection.isEmpty()) {
+                return "(none)";
+            }
+            return collection.stream()
+                           .map(Object::toString)
+                           .collect(java.util.stream.Collectors.joining(", "));
+        }
+        if (value instanceof String) {
+            String str = (String) value;
+            return str.isEmpty() ? "(empty)" : str;
+        }
+        return value.toString();
     }
     
     /**

@@ -19,7 +19,7 @@ import java.time.LocalDate;
 @SuperBuilder(toBuilder = true)
 @EqualsAndHashCode(callSuper = true)
 @ToString(callSuper = true)
-public class Report extends Document {
+public class Report extends Document implements DocumentFieldExtractor {
     
     {
         setDocumentType(DocumentType.REPORT);
@@ -72,6 +72,54 @@ public class Report extends Document {
             reportTarget.setReportNumber(this.getReportNumber());
             reportTarget.setDepartment(this.getDepartment());
             reportTarget.setConfidentialityLevel(this.getConfidentialityLevel());
+        }
+    }
+    
+    @Override
+    public String getFieldExtractionRules() {
+        return """
+            
+            ADDITIONAL REQUIRED FIELDS FOR REPORT TYPE (include these in your JSON):
+            - reportNumber: Report identification number or reference code (string)
+            - reportDate: Date the report was created/issued in YYYY-MM-DD format (string)
+            - department: Department, division, or organization that created the report (string)
+            - confidentialityLevel: Classification level like "PUBLIC", "CONFIDENTIAL", "RESTRICTED", "INTERNAL" (string)
+            
+            Extract these from the document content or headers. If not explicitly stated, infer reasonable values.
+            For confidentialityLevel, default to "INTERNAL" if not mentioned.
+            """;
+    }
+    
+    @Override
+    public java.util.Map<String, Object> getCurrentFieldValues() {
+        java.util.Map<String, Object> fields = new java.util.HashMap<>();
+        fields.put("reportNumber", reportNumber);
+        fields.put("reportDate", reportDate);
+        fields.put("department", department);
+        fields.put("confidentialityLevel", confidentialityLevel);
+        return fields;
+    }
+    
+    @Override
+    public void applyExtractedFields(java.util.Map<String, Object> extractedFields) {
+        if (extractedFields.containsKey("reportNumber")) {
+            this.reportNumber = (String) extractedFields.get("reportNumber");
+        }
+        if (extractedFields.containsKey("reportDate")) {
+            Object dateValue = extractedFields.get("reportDate");
+            if (dateValue instanceof String) {
+                try {
+                    this.reportDate = java.time.LocalDate.parse((String) dateValue);
+                } catch (Exception e) {
+                    // Invalid date format, skip
+                }
+            }
+        }
+        if (extractedFields.containsKey("department")) {
+            this.department = (String) extractedFields.get("department");
+        }
+        if (extractedFields.containsKey("confidentialityLevel")) {
+            this.confidentialityLevel = (String) extractedFields.get("confidentialityLevel");
         }
     }
 }
