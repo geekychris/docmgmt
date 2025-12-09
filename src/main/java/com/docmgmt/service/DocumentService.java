@@ -2,9 +2,13 @@ package com.docmgmt.service;
 
 import com.docmgmt.model.Document;
 import com.docmgmt.repository.DocumentRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,9 +20,58 @@ import java.util.Optional;
  */
 @Service
 public class DocumentService extends AbstractSysObjectService<Document, DocumentRepository> {
+    
+    private static final Logger logger = LoggerFactory.getLogger(DocumentService.class);
+    
+    @Value("${docmgmt.similarity.auto-generate-embeddings:false}")
+    private boolean autoGenerateEmbeddings;
+    
+    @Value("${docmgmt.similarity.async-generation:true}")
+    private boolean asyncGeneration;
+    
+    private DocumentSimilarityService similarityService;
+    
     @Autowired
     public DocumentService(DocumentRepository repository) {
         super(repository);
+    }
+    
+    @Autowired(required = false)
+    public void setSimilarityService(DocumentSimilarityService similarityService) {
+        this.similarityService = similarityService;
+    }
+    
+    @Override
+    @Transactional
+    public Document save(Document document) {
+        Document saved = super.save(document);
+        
+        // Auto-generate embedding if enabled
+        if (autoGenerateEmbeddings && similarityService != null) {
+            if (asyncGeneration) {
+                generateEmbeddingAsync(saved.getId());
+            } else {
+                try {
+                    similarityService.generateEmbedding(saved);
+                } catch (Exception e) {
+                    logger.warn("Failed to generate embedding for document {}", saved.getId(), e);
+                }
+            }
+        }
+        
+        return saved;
+    }
+    
+    @Async
+    public void generateEmbeddingAsync(Long documentId) {
+        try {
+            Document doc = findById(documentId);
+            if (doc != null && similarityService != null) {
+                similarityService.generateEmbedding(doc);
+            }
+        } catch (Exception e) {
+            logger.warn("Async embedding generation failed for document {}", documentId, e);
+        }
     }
     
     /**

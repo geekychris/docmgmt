@@ -4,6 +4,7 @@ import com.docmgmt.search.LuceneIndexService;
 import com.docmgmt.search.SearchResult;
 import com.docmgmt.search.SearchResultsWrapper;
 import com.docmgmt.service.DocumentService;
+import com.docmgmt.service.DocumentSimilarityService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
@@ -31,6 +32,9 @@ public class SearchController {
     
     @Autowired
     private DocumentService documentService;
+    
+    @Autowired
+    private DocumentSimilarityService similarityService;
     
     @Operation(
         summary = "Simple text search",
@@ -125,6 +129,101 @@ public class SearchController {
             return ResponseEntity.ok(searchService.getIndexStats());
         } catch (IOException e) {
             return ResponseEntity.internalServerError().build();
+        }
+    }
+    
+    @Operation(
+        summary = "Similarity search by document",
+        description = "Find documents similar to a given document using vector embeddings and cosine similarity"
+    )
+    @GetMapping("/similar/{documentId}")
+    public ResponseEntity<List<Map<String, Object>>> findSimilar(
+            @PathVariable Long documentId,
+            @RequestParam(defaultValue = "10") int limit) {
+        try {
+            List<DocumentSimilarityService.SimilarityResult> results = 
+                similarityService.findSimilar(documentId, limit);
+            
+            List<Map<String, Object>> response = results.stream()
+                .map(r -> {
+                    Map<String, Object> map = new java.util.HashMap<>();
+                    map.put("documentId", r.getDocument().getId());
+                    map.put("name", r.getDocument().getName());
+                    map.put("similarity", r.getSimilarity());
+                    return map;
+                })
+                .collect(java.util.stream.Collectors.toList());
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+    
+    @Operation(
+        summary = "Similarity search by text query",
+        description = "Find documents similar to the provided text using vector embeddings"
+    )
+    @PostMapping("/similar")
+    public ResponseEntity<List<Map<String, Object>>> findSimilarByText(
+            @RequestParam String q,
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestBody(required = false) Map<String, String> filters) {
+        try {
+            List<DocumentSimilarityService.SimilarityResult> results;
+            
+            if (filters != null && !filters.isEmpty()) {
+                results = similarityService.findSimilarByTextWithFilters(q, filters, limit);
+            } else {
+                results = similarityService.findSimilarByText(q, limit);
+            }
+            
+            List<Map<String, Object>> response = results.stream()
+                .map(r -> {
+                    Map<String, Object> map = new java.util.HashMap<>();
+                    map.put("documentId", r.getDocument().getId());
+                    map.put("name", r.getDocument().getName());
+                    map.put("description", r.getDocument().getDescription() != null ? r.getDocument().getDescription() : "");
+                    map.put("similarity", r.getSimilarity());
+                    return map;
+                })
+                .collect(java.util.stream.Collectors.toList());
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+    
+    @Operation(
+        summary = "Generate embedding for a document",
+        description = "Generate and store vector embedding for document content"
+    )
+    @PostMapping("/embeddings/{documentId}")
+    public ResponseEntity<String> generateEmbedding(@PathVariable Long documentId) {
+        try {
+            var doc = documentService.findById(documentId);
+            if (doc == null) {
+                return ResponseEntity.notFound().build();
+            }
+            similarityService.generateEmbedding(doc);
+            return ResponseEntity.ok("Embedding generated");
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Failed to generate embedding");
+        }
+    }
+    
+    @Operation(
+        summary = "Rebuild all embeddings",
+        description = "Regenerate vector embeddings for all documents"
+    )
+    @PostMapping("/embeddings/rebuild")
+    public ResponseEntity<String> rebuildEmbeddings() {
+        try {
+            similarityService.rebuildAllEmbeddings();
+            return ResponseEntity.ok("Embeddings rebuilt");
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Failed to rebuild embeddings");
         }
     }
 }

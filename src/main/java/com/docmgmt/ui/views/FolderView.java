@@ -6,6 +6,7 @@ import com.docmgmt.model.Document.DocumentType;
 import com.docmgmt.service.ContentService;
 import com.docmgmt.service.DocumentService;
 import com.docmgmt.service.DocumentFieldExtractionService;
+import com.docmgmt.service.DocumentSimilarityService;
 import com.docmgmt.service.FileStoreService;
 import com.docmgmt.service.FolderService;
 import com.docmgmt.service.UserService;
@@ -78,6 +79,7 @@ public class FolderView extends VerticalLayout {
     private final TransformerRegistry transformerRegistry;
     private final DocumentFieldExtractionService fieldExtractionService;
     private final PluginService pluginService;
+    private final DocumentSimilarityService similarityService;
     
     private TreeGrid<Folder> folderTree;
     private Grid<SysObject> itemsGrid;
@@ -99,7 +101,7 @@ public class FolderView extends VerticalLayout {
     public FolderView(FolderService folderService, DocumentService documentService, UserService userService, 
                      ContentService contentService, FileStoreService fileStoreService,
                      TransformerRegistry transformerRegistry, DocumentFieldExtractionService fieldExtractionService,
-                     PluginService pluginService) {
+                     PluginService pluginService, DocumentSimilarityService similarityService) {
         this.folderService = folderService;
         this.documentService = documentService;
         this.userService = userService;
@@ -108,6 +110,7 @@ public class FolderView extends VerticalLayout {
         this.transformerRegistry = transformerRegistry;
         this.fieldExtractionService = fieldExtractionService;
         this.pluginService = pluginService;
+        this.similarityService = similarityService;
         
         addClassName("folder-view");
         setSizeFull();
@@ -1113,6 +1116,17 @@ public class FolderView extends VerticalLayout {
         HorizontalLayout versionButtons = new HorizontalLayout(createMajorVersionButton, createMinorVersionButton);
         versionButtons.setSpacing(true);
         
+        // Find Similar button
+        Button findSimilarButton = new Button("Find Similar Documents", new Icon(VaadinIcon.SEARCH));
+        findSimilarButton.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
+        findSimilarButton.addClickListener(e -> {
+            dialog.close();
+            openSimilarityDialog(reloadedDoc);
+        });
+        
+        HorizontalLayout similarityButtons = new HorizontalLayout(findSimilarButton);
+        similarityButtons.setSpacing(true);
+        
         // Dialog buttons
         HorizontalLayout buttons;
         if (editMode) {
@@ -1158,6 +1172,7 @@ public class FolderView extends VerticalLayout {
             contentToolbar,
             new Hr(),
             versionButtons,
+            similarityButtons,
             buttons
         );
         layout.setPadding(true);
@@ -2260,5 +2275,99 @@ public class FolderView extends VerticalLayout {
                    .replace(">", "&gt;")
                    .replace("\"", "&quot;")
                    .replace("'", "&#39;");
+    }
+    
+    /**
+     * Open dialog showing similar documents
+     */
+    private void openSimilarityDialog(Document document) {
+        Dialog dialog = new Dialog();
+        dialog.setWidth("800px");
+        dialog.setHeight("600px");
+        
+        H2 title = new H2("Documents Similar to: " + document.getName());
+        
+        // Show loading indicator
+        VerticalLayout loadingLayout = new VerticalLayout();
+        loadingLayout.setAlignItems(FlexComponent.Alignment.CENTER);
+        loadingLayout.setJustifyContentMode(FlexComponent.JustifyContentMode.CENTER);
+        loadingLayout.setSizeFull();
+        Span loadingText = new Span("Searching for similar documents...");
+        loadingLayout.add(loadingText);
+        
+        VerticalLayout contentLayout = new VerticalLayout();
+        contentLayout.setSizeFull();
+        contentLayout.add(loadingLayout);
+        
+        Button closeButton = new Button("Close", e -> dialog.close());
+        closeButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        
+        HorizontalLayout buttons = new HorizontalLayout(closeButton);
+        buttons.setJustifyContentMode(FlexComponent.JustifyContentMode.END);
+        buttons.setWidthFull();
+        
+        VerticalLayout layout = new VerticalLayout(title, contentLayout, buttons);
+        layout.setSizeFull();
+        dialog.add(layout);
+        dialog.open();
+        
+        // Fetch similar documents asynchronously
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                return similarityService.findSimilar(document.getId(), 10);
+            } catch (Exception e) {
+                logger.error("Error finding similar documents", e);
+                return Collections.<DocumentSimilarityService.SimilarityResult>emptyList();
+            }
+        }).thenAccept(results -> {
+            getUI().ifPresent(ui -> ui.access(() -> {
+                contentLayout.removeAll();
+                
+                if (results.isEmpty()) {
+                    Span noResults = new Span("No similar documents found. The document may not have an embedding yet.");
+                    noResults.getStyle().set("color", "var(--lumo-secondary-text-color)");
+                    contentLayout.add(noResults);
+                } else {
+                    // Create grid to show results
+                    Grid<DocumentSimilarityService.SimilarityResult> resultsGrid = 
+                        new Grid<>(DocumentSimilarityService.SimilarityResult.class, false);
+                    resultsGrid.setSizeFull();
+                    
+                    resultsGrid.addColumn(result -> result.getDocument().getName())
+                        .setHeader("Document Name")
+                        .setResizable(true)
+                        .setAutoWidth(true)
+                        .setFlexGrow(2);
+                    
+                    resultsGrid.addColumn(result -> result.getDocument().getDescription())
+                        .setHeader("Description")
+                        .setResizable(true)
+                        .setAutoWidth(true)
+                        .setFlexGrow(3);
+                    
+                    resultsGrid.addColumn(result -> String.format("%.2f%%", result.getSimilarity() * 100))
+                        .setHeader("Similarity Score")
+                        .setResizable(true)
+                        .setAutoWidth(true)
+                        .setFlexGrow(1);
+                    
+                    resultsGrid.setItems(results);
+                    
+                    // Add double-click to open document
+                    resultsGrid.addItemDoubleClickListener(event -> {
+                        dialog.close();
+                        openDocumentDetailDialog(event.getItem().getDocument());
+                    });
+                    
+                    Span hint = new Span("Double-click a document to view its details");
+                    hint.getStyle()
+                        .set("color", "var(--lumo-secondary-text-color)") 
+                        .set("font-size", "var(--lumo-font-size-s)")
+                        .set("font-style", "italic");
+                    
+                    contentLayout.add(resultsGrid, hint);
+                }
+            }));
+        });
     }
 }

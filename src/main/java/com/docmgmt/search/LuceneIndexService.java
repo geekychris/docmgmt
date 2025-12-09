@@ -3,6 +3,7 @@ package com.docmgmt.search;
 import com.docmgmt.model.Content;
 import com.docmgmt.model.Document;
 import com.docmgmt.service.ContentService;
+import com.docmgmt.service.DocumentSimilarityService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
@@ -55,15 +56,21 @@ public class LuceneIndexService {
     @Value("${lucene.index.directory:./lucene_index}")
     private String indexDirectoryPath;
     
+    @Value("${docmgmt.similarity.auto-generate-embeddings:false}")
+    private boolean autoGenerateEmbeddings;
+    
     private final ContentService contentService;
+    private final DocumentSimilarityService similarityService;
     
     private Directory directory;
     private StandardAnalyzer analyzer;
     private IndexWriter indexWriter;
     
     @Autowired
-    public LuceneIndexService(ContentService contentService) {
+    public LuceneIndexService(ContentService contentService, 
+                              DocumentSimilarityService similarityService) {
         this.contentService = contentService;
+        this.similarityService = similarityService;
     }
     
     @PostConstruct
@@ -315,6 +322,16 @@ public class LuceneIndexService {
         }
         
         logger.info("Index rebuilt with {} documents", documents.size());
+        
+        // Generate embeddings if enabled
+        if (autoGenerateEmbeddings) {
+            logger.info("Auto-generating embeddings for all documents...");
+            try {
+                similarityService.rebuildAllEmbeddings();
+            } catch (Exception e) {
+                logger.error("Failed to rebuild embeddings", e);
+            }
+        }
     }
     
     /**
