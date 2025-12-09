@@ -48,6 +48,9 @@ public abstract class Document extends SysObject {
     @Column(name = "keywords", columnDefinition = "TEXT")
     private String keywords;
     
+    @OneToOne(mappedBy = "document", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private DocumentEmbedding embedding;
+    
     /**
      * Add a tag to the document
      * @param tag The tag to add

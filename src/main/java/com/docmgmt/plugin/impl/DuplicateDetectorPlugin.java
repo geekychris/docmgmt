@@ -7,26 +7,23 @@ import com.docmgmt.plugin.PluginMetadata;
 import com.docmgmt.plugin.PluginParameter;
 import com.docmgmt.plugin.PluginRequest;
 import com.docmgmt.plugin.PluginResponse;
-import com.docmgmt.service.DocumentService;
+import com.docmgmt.service.DocumentSimilarityService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Component
 public class DuplicateDetectorPlugin implements DocumentPlugin, PluginMetadata {
     
     private static final Logger logger = LoggerFactory.getLogger(DuplicateDetectorPlugin.class);
-    private final ChatModel chatModel;
-    private final DocumentService documentService;
+    private final DocumentSimilarityService similarityService;
     
-    public DuplicateDetectorPlugin(ChatModel chatModel, DocumentService documentService) {
-        this.chatModel = chatModel;
-        this.documentService = documentService;
+    public DuplicateDetectorPlugin(DocumentSimilarityService similarityService) {
+        this.similarityService = similarityService;
     }
     
     @Override
@@ -36,7 +33,7 @@ public class DuplicateDetectorPlugin implements DocumentPlugin, PluginMetadata {
     
     @Override
     public String getDescription() {
-        return "Find similar or duplicate documents in the system with similarity scores";
+        return "Find similar or duplicate documents using vector embeddings";
     }
     
     @Override
@@ -55,12 +52,22 @@ public class DuplicateDetectorPlugin implements DocumentPlugin, PluginMetadata {
             PluginParameter.builder()
                 .name("maxResults")
                 .label("Maximum Results")
-                .description("Maximum number of duplicates to find")
+                .description("Maximum number of similar documents to find")
                 .type(PluginParameter.ParameterType.NUMBER)
                 .required(false)
-                .defaultValue("5")
+                .defaultValue("10")
                 .minValue(1)
                 .maxValue(20)
+                .build(),
+            PluginParameter.builder()
+                .name("minSimilarity")
+                .label("Minimum Similarity")
+                .description("Minimum similarity threshold (0-100%)")
+                .type(PluginParameter.ParameterType.NUMBER)
+                .required(false)
+                .defaultValue("50")
+                .minValue(0)
+                .maxValue(100)
                 .build()
         );
     }
@@ -68,81 +75,66 @@ public class DuplicateDetectorPlugin implements DocumentPlugin, PluginMetadata {
     @Override
     public PluginResponse execute(PluginRequest request) throws PluginException {
         try {
-            String content = request.getContent();
             Document currentDoc = request.getDocument();
-            Integer maxResults = request.getParameter("maxResults", 5);
+            Integer maxResults = request.getParameter("maxResults", 10);
+            Integer minSimilarity = request.getParameter("minSimilarity", 50);
             
-            String contentToAnalyze = content.length() > 2000 ? content.substring(0, 2000) : content;
+            // Convert percentage to 0-1 scale
+            double minSimilarityThreshold = minSimilarity / 100.0;
             
-            // Get all other documents (basic implementation - in production would use vector search)
-            List<Document> allDocs = documentService.findAllLatestVersions();
-            List<Map<String, Object>> potentialDuplicates = new ArrayList<>();
+            // Use embedding-based similarity search
+            List<DocumentSimilarityService.SimilarityResult> similarityResults = 
+                similarityService.findSimilar(currentDoc, maxResults * 2); // Get extra for filtering
             
-            // Simple heuristic filtering first
-            for (Document doc : allDocs) {
-                if (doc.getId().equals(currentDoc.getId())) {
-                    continue;
-                }
-                
-                // Check name similarity
-                if (doc.getName() != null && currentDoc.getName() != null) {
-                    String similarity = calculateBasicSimilarity(currentDoc.getName(), doc.getName());
-                    if (similarity.equals("high") || similarity.equals("medium")) {
-                        Map<String, Object> candidate = new HashMap<>();
-                        candidate.put("documentId", doc.getId());
-                        candidate.put("documentName", doc.getName());
-                        candidate.put("nameSimilarity", similarity);
-                        potentialDuplicates.add(candidate);
-                    }
-                }
+            if (similarityResults.isEmpty()) {
+                logger.warn("No embedding found for document {}. Similarity search unavailable.", currentDoc.getId());
+                return PluginResponse.builder()
+                    .status(PluginResponse.PluginStatus.SUCCESS)
+                    .data(Map.of(
+                        "duplicates", Collections.emptyList(),
+                        "totalCandidates", 0,
+                        "message", "No embedding found for this document. Please ensure embeddings are generated."
+                    ))
+                    .build();
             }
             
-            // Use LLM for deeper analysis of top candidates
-            List<Map<String, Object>> analyzedDuplicates = new ArrayList<>();
-            int analyzed = 0;
-            
-            for (Map<String, Object> candidate : potentialDuplicates) {
-                if (analyzed >= maxResults) break;
-                
-                Long docId = (Long) candidate.get("documentId");
-                String docName = (String) candidate.get("documentName");
-                
-                String prompt = String.format(
-                    "Compare these two documents and rate their similarity from 0-100.\\n" +
-                    "Focus on content, structure, and purpose.\\n\\n" +
-                    "Document 1 (name: %s):\\n%s\\n\\n" +
-                    "Document 2 (name: %s)\\n\\n" +
-                    "Provide only the similarity score (0-100) and nothing else.",
-                    currentDoc.getName(),
-                    contentToAnalyze.substring(0, Math.min(500, contentToAnalyze.length())),
-                    docName
-                );
-                
-                try {
-                    String response = chatModel.call(new Prompt(prompt)).getResult().getOutput().getContent();
-                    int similarityScore = extractScore(response);
+            // Filter by minimum similarity and format results
+            List<Map<String, Object>> duplicates = similarityResults.stream()
+                .filter(result -> result.getSimilarity() >= minSimilarityThreshold)
+                .limit(maxResults)
+                .map(result -> {
+                    Map<String, Object> item = new HashMap<>();
+                    Document doc = result.getDocument();
+                    item.put("documentId", doc.getId());
+                    item.put("documentName", doc.getName());
+                    item.put("documentDescription", doc.getDescription());
+                    item.put("documentType", doc.getDocumentType() != null ? doc.getDocumentType().toString() : "Unknown");
+                    item.put("similarityScore", Math.round(result.getSimilarity() * 100));
+                    item.put("similarityPercentage", String.format("%.1f%%", result.getSimilarity() * 100));
                     
-                    if (similarityScore >= 50) { // Only include if significantly similar
-                        candidate.put("similarityScore", similarityScore);
-                        analyzedDuplicates.add(candidate);
-                        analyzed++;
+                    // Categorize similarity level
+                    double similarity = result.getSimilarity();
+                    String level;
+                    if (similarity >= 0.95) {
+                        level = "Very High (Likely Duplicate)";
+                    } else if (similarity >= 0.80) {
+                        level = "High";
+                    } else if (similarity >= 0.60) {
+                        level = "Medium";
+                    } else {
+                        level = "Low";
                     }
-                } catch (Exception e) {
-                    logger.warn("Failed to analyze similarity for document {}: {}", docId, e.getMessage());
-                }
-            }
-            
-            // Sort by similarity score
-            analyzedDuplicates.sort((a, b) -> {
-                Integer scoreA = (Integer) a.getOrDefault("similarityScore", 0);
-                Integer scoreB = (Integer) b.getOrDefault("similarityScore", 0);
-                return scoreB.compareTo(scoreA);
-            });
+                    item.put("similarityLevel", level);
+                    
+                    return item;
+                })
+                .collect(Collectors.toList());
             
             Map<String, Object> data = new HashMap<>();
-            data.put("duplicates", analyzedDuplicates.subList(0, Math.min(maxResults, analyzedDuplicates.size())));
-            data.put("totalCandidates", potentialDuplicates.size());
-            data.put("analyzedCount", analyzed);
+            data.put("duplicates", duplicates);
+            data.put("totalCandidates", similarityResults.size());
+            data.put("filteredCount", duplicates.size());
+            data.put("minSimilarityThreshold", minSimilarity + "%");
             
             return PluginResponse.builder()
                 .status(PluginResponse.PluginStatus.SUCCESS)
@@ -153,40 +145,5 @@ public class DuplicateDetectorPlugin implements DocumentPlugin, PluginMetadata {
             logger.error("Duplicate detection failed", e);
             throw new PluginException("Duplicate detection failed: " + e.getMessage(), e);
         }
-    }
-    
-    private String calculateBasicSimilarity(String str1, String str2) {
-        String s1 = str1.toLowerCase();
-        String s2 = str2.toLowerCase();
-        
-        if (s1.equals(s2)) return "high";
-        if (s1.contains(s2) || s2.contains(s1)) return "high";
-        
-        // Simple word overlap
-        Set<String> words1 = new HashSet<>(Arrays.asList(s1.split("\\s+")));
-        Set<String> words2 = new HashSet<>(Arrays.asList(s2.split("\\s+")));
-        
-        Set<String> intersection = new HashSet<>(words1);
-        intersection.retainAll(words2);
-        
-        double overlap = (double) intersection.size() / Math.max(words1.size(), words2.size());
-        
-        if (overlap > 0.6) return "high";
-        if (overlap > 0.3) return "medium";
-        return "low";
-    }
-    
-    private int extractScore(String response) {
-        try {
-            // Extract first number found
-            String cleaned = response.trim().replaceAll("[^0-9]", "");
-            if (!cleaned.isEmpty()) {
-                int score = Integer.parseInt(cleaned.substring(0, Math.min(3, cleaned.length())));
-                return Math.min(100, Math.max(0, score));
-            }
-        } catch (Exception e) {
-            logger.warn("Failed to extract score from: {}", response);
-        }
-        return 0;
     }
 }

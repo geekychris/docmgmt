@@ -325,9 +325,9 @@ public class LuceneIndexService {
         
         // Generate embeddings if enabled
         if (autoGenerateEmbeddings) {
-            logger.info("Auto-generating embeddings for all documents...");
+            logger.info("Auto-generating embeddings for {} documents...", documents.size());
             try {
-                similarityService.rebuildAllEmbeddings();
+                similarityService.rebuildEmbeddings(documents);
             } catch (Exception e) {
                 logger.error("Failed to rebuild embeddings", e);
             }

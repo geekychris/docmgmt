@@ -3,6 +3,7 @@ package com.docmgmt.ui.views;
 import com.docmgmt.dto.FieldSuggestionDTO;
 import com.docmgmt.model.*;
 import com.docmgmt.model.Document.DocumentType;
+import com.docmgmt.search.LuceneIndexService;
 import com.docmgmt.service.ContentService;
 import com.docmgmt.service.DocumentService;
 import com.docmgmt.service.DocumentFieldExtractionService;
@@ -80,6 +81,7 @@ public class FolderView extends VerticalLayout {
     private final DocumentFieldExtractionService fieldExtractionService;
     private final PluginService pluginService;
     private final DocumentSimilarityService similarityService;
+    private final LuceneIndexService luceneIndexService;
     
     private TreeGrid<Folder> folderTree;
     private Grid<SysObject> itemsGrid;
@@ -94,6 +96,7 @@ public class FolderView extends VerticalLayout {
     private Button transformFolderButton;
     private Button moveFoldersButton;
     private Button moveToRootButton;
+    private Button rebuildIndexButton;
     
     private H3 currentFolderLabel;
     
@@ -101,7 +104,8 @@ public class FolderView extends VerticalLayout {
     public FolderView(FolderService folderService, DocumentService documentService, UserService userService, 
                      ContentService contentService, FileStoreService fileStoreService,
                      TransformerRegistry transformerRegistry, DocumentFieldExtractionService fieldExtractionService,
-                     PluginService pluginService, DocumentSimilarityService similarityService) {
+                     PluginService pluginService, DocumentSimilarityService similarityService,
+                     LuceneIndexService luceneIndexService) {
         this.folderService = folderService;
         this.documentService = documentService;
         this.userService = userService;
@@ -111,6 +115,7 @@ public class FolderView extends VerticalLayout {
         this.fieldExtractionService = fieldExtractionService;
         this.pluginService = pluginService;
         this.similarityService = similarityService;
+        this.luceneIndexService = luceneIndexService;
         
         addClassName("folder-view");
         setSizeFull();
@@ -174,9 +179,15 @@ public class FolderView extends VerticalLayout {
         moveToRootButton.setEnabled(false);
         moveToRootButton.addClickListener(e -> moveSelectedToRoot());
         
+        rebuildIndexButton = new Button("Rebuild Index", new Icon(VaadinIcon.REFRESH));
+        rebuildIndexButton.addThemeVariants(ButtonVariant.LUMO_SUCCESS);
+        rebuildIndexButton.setEnabled(false);
+        rebuildIndexButton.addClickListener(e -> openRebuildIndexDialog());
+        
         HorizontalLayout toolbar = new HorizontalLayout(
             createFolderButton, createSubfolderButton, addDocumentButton, linkDocumentButton,
-            new Hr(), moveFoldersButton, moveToRootButton
+            new Hr(), moveFoldersButton, moveToRootButton,
+            new Hr(), rebuildIndexButton
         );
         toolbar.setDefaultVerticalComponentAlignment(FlexComponent.Alignment.CENTER);
         toolbar.setPadding(true);
@@ -329,6 +340,7 @@ public class FolderView extends VerticalLayout {
         addDocumentButton.setEnabled(true);
         linkDocumentButton.setEnabled(true);
         transformFolderButton.setEnabled(true);
+        rebuildIndexButton.setEnabled(true);
         refreshFolderContents();
     }
     
@@ -2292,7 +2304,7 @@ public class FolderView extends VerticalLayout {
         loadingLayout.setAlignItems(FlexComponent.Alignment.CENTER);
         loadingLayout.setJustifyContentMode(FlexComponent.JustifyContentMode.CENTER);
         loadingLayout.setSizeFull();
-        Span loadingText = new Span("Searching for similar documents...");
+        Span loadingText = new Span("Preparing similarity search...");
         loadingLayout.add(loadingText);
         
         VerticalLayout contentLayout = new VerticalLayout();
@@ -2311,10 +2323,37 @@ public class FolderView extends VerticalLayout {
         dialog.add(layout);
         dialog.open();
         
-        // Fetch similar documents asynchronously
+        // Generate embedding and fetch similar documents asynchronously
         CompletableFuture.supplyAsync(() -> {
             try {
-                return similarityService.findSimilar(document.getId(), 10);
+                // Reload document to ensure contents are loaded
+                Document reloadedDoc = documentService.findById(document.getId());
+                
+                // Try to find similar documents
+                List<DocumentSimilarityService.SimilarityResult> results = 
+                    similarityService.findSimilar(reloadedDoc.getId(), 10);
+                
+                // If no results and no embedding exists, try to generate it
+                if (results.isEmpty()) {
+                    logger.info("No embedding found for document {}, attempting to generate...", reloadedDoc.getId());
+                    
+                    // Update UI to show we're generating
+                    getUI().ifPresent(ui -> ui.access(() -> {
+                        loadingText.setText("Generating embedding for this document...");
+                    }));
+                    
+                    // Generate embedding
+                    similarityService.generateEmbedding(reloadedDoc);
+                    
+                    // Try search again
+                    getUI().ifPresent(ui -> ui.access(() -> {
+                        loadingText.setText("Searching for similar documents...");
+                    }));
+                    
+                    results = similarityService.findSimilar(reloadedDoc.getId(), 10);
+                }
+                
+                return results;
             } catch (Exception e) {
                 logger.error("Error finding similar documents", e);
                 return Collections.<DocumentSimilarityService.SimilarityResult>emptyList();
@@ -2324,9 +2363,33 @@ public class FolderView extends VerticalLayout {
                 contentLayout.removeAll();
                 
                 if (results.isEmpty()) {
-                    Span noResults = new Span("No similar documents found. The document may not have an embedding yet.");
-                    noResults.getStyle().set("color", "var(--lumo-secondary-text-color)");
-                    contentLayout.add(noResults);
+                    VerticalLayout noResultsLayout = new VerticalLayout();
+                    noResultsLayout.setAlignItems(FlexComponent.Alignment.CENTER);
+                    noResultsLayout.setJustifyContentMode(FlexComponent.JustifyContentMode.CENTER);
+                    noResultsLayout.setPadding(true);
+                    
+                    Span noResults = new Span("No similar documents found.");
+                    noResults.getStyle()
+                        .set("color", "var(--lumo-secondary-text-color)")
+                        .set("font-size", "var(--lumo-font-size-l)")
+                        .set("margin-bottom", "10px");
+                    
+                    Span explanation = new Span("This could mean:");
+                    explanation.getStyle()
+                        .set("color", "var(--lumo-secondary-text-color)")
+                        .set("margin-bottom", "5px");
+                    
+                    Span reason1 = new Span("• No other documents have embeddings yet");
+                    reason1.getStyle().set("color", "var(--lumo-secondary-text-color)");
+                    
+                    Span reason2 = new Span("• This document has no text content to analyze");
+                    reason2.getStyle().set("color", "var(--lumo-secondary-text-color)");
+                    
+                    Span reason3 = new Span("• Ollama service may not be running");
+                    reason3.getStyle().set("color", "var(--lumo-secondary-text-color)");
+                    
+                    noResultsLayout.add(noResults, explanation, reason1, reason2, reason3);
+                    contentLayout.add(noResultsLayout);
                 } else {
                     // Create grid to show results
                     Grid<DocumentSimilarityService.SimilarityResult> resultsGrid = 
@@ -2369,5 +2432,156 @@ public class FolderView extends VerticalLayout {
                 }
             }));
         });
+    }
+    
+    /**
+     * Open dialog to rebuild index for documents in the selected folder
+     */
+    private void openRebuildIndexDialog() {
+        if (currentFolder == null) {
+            return;
+        }
+        
+        Dialog dialog = new Dialog();
+        dialog.setWidth("600px");
+        
+        H2 title = new H2("Rebuild Index: " + currentFolder.getName());
+        
+        Span description = new Span(
+            "This will rebuild the Lucene index and embeddings for all documents " +
+            "in this folder (including subfolders).");
+        description.getStyle()
+            .set("color", "var(--lumo-secondary-text-color)")
+            .set("margin-bottom", "10px");
+        
+        Checkbox includeSubfoldersCheckbox = new Checkbox("Include subfolders (recursive)", true);
+        includeSubfoldersCheckbox.getStyle().set("margin-bottom", "10px");
+        
+        VerticalLayout progressLayout = new VerticalLayout();
+        progressLayout.setVisible(false);
+        progressLayout.setAlignItems(FlexComponent.Alignment.CENTER);
+        progressLayout.setPadding(true);
+        
+        Span progressText = new Span("Rebuilding index...");
+        progressText.getStyle().set("margin-bottom", "10px");
+        progressLayout.add(progressText);
+        
+        Button cancelButton = new Button("Cancel", e -> dialog.close());
+        
+        Button rebuildButton = new Button("Rebuild Index", new Icon(VaadinIcon.REFRESH), e -> {
+            // Disable buttons during processing
+            cancelButton.setEnabled(false);
+            ((Button) e.getSource()).setEnabled(false);
+            progressLayout.setVisible(true);
+            
+            boolean recursive = includeSubfoldersCheckbox.getValue();
+            
+            // Collect documents asynchronously
+            CompletableFuture.supplyAsync(() -> {
+                try {
+                    List<Document> documents = new ArrayList<>();
+                    collectDocumentsFromFolder(currentFolder, documents, recursive);
+                    return documents;
+                } catch (Exception ex) {
+                    logger.error("Error collecting documents", ex);
+                    return Collections.<Document>emptyList();
+                }
+            }).thenAccept(documents -> {
+                if (documents.isEmpty()) {
+                    getUI().ifPresent(ui -> ui.access(() -> {
+                        progressText.setText("No documents found in folder.");
+                        cancelButton.setEnabled(true);
+                    }));
+                    return;
+                }
+                
+                // Update progress
+                getUI().ifPresent(ui -> ui.access(() -> {
+                    progressText.setText(String.format("Rebuilding index for %d documents...", documents.size()));
+                }));
+                
+                // Rebuild index
+                try {
+                    luceneIndexService.rebuildIndex(documents);
+                    
+                    getUI().ifPresent(ui -> ui.access(() -> {
+                        progressText.setText(String.format("Index rebuilt successfully for %d documents!", documents.size()));
+                        progressText.getStyle().set("color", "var(--lumo-success-color)");
+                        
+                        Notification.show(
+                            String.format("Index rebuilt for %d documents", documents.size()),
+                            3000,
+                            Notification.Position.BOTTOM_START
+                        ).addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                        
+                        // Close dialog after short delay
+                        new Thread(() -> {
+                            try {
+                                Thread.sleep(2000);
+                                ui.access(dialog::close);
+                            } catch (InterruptedException ex) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }).start();
+                    }));
+                } catch (Exception ex) {
+                    logger.error("Error rebuilding index", ex);
+                    getUI().ifPresent(ui -> ui.access(() -> {
+                        progressText.setText("Error: " + ex.getMessage());
+                        progressText.getStyle().set("color", "var(--lumo-error-color)");
+                        cancelButton.setEnabled(true);
+                        
+                        Notification.show(
+                            "Failed to rebuild index: " + ex.getMessage(),
+                            5000,
+                            Notification.Position.BOTTOM_START
+                        ).addThemeVariants(NotificationVariant.LUMO_ERROR);
+                    }));
+                }
+            });
+        });
+        rebuildButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        
+        HorizontalLayout buttons = new HorizontalLayout(cancelButton, rebuildButton);
+        buttons.setJustifyContentMode(FlexComponent.JustifyContentMode.END);
+        buttons.setWidthFull();
+        
+        VerticalLayout layout = new VerticalLayout(
+            title,
+            new Hr(),
+            description,
+            includeSubfoldersCheckbox,
+            progressLayout,
+            buttons
+        );
+        layout.setPadding(true);
+        layout.setSpacing(true);
+        
+        dialog.add(layout);
+        dialog.open();
+    }
+    
+    /**
+     * Recursively collect all documents from a folder and its subfolders
+     */
+    private void collectDocumentsFromFolder(Folder folder, List<Document> documents, boolean recursive) {
+        // Load folder with relationships
+        Folder loadedFolder = folderService.findByIdWithRelationships(folder.getId());
+        
+        // Add documents from current folder
+        if (loadedFolder.getItems() != null) {
+            for (SysObject item : loadedFolder.getItems()) {
+                if (item instanceof Document) {
+                    documents.add((Document) item);
+                }
+            }
+        }
+        
+        // Recursively process subfolders if requested
+        if (recursive && loadedFolder.getChildFolders() != null) {
+            for (Folder childFolder : loadedFolder.getChildFolders()) {
+                collectDocumentsFromFolder(childFolder, documents, recursive);
+            }
+        }
     }
 }

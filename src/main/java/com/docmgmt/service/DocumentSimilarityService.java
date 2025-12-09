@@ -62,7 +62,7 @@ public class DocumentSimilarityService {
             String contentHash = calculateHash(content);
             
             // Check if embedding already exists and is up-to-date
-            Optional<DocumentEmbedding> existing = embeddingRepository.findByDocument(document);
+            Optional<DocumentEmbedding> existing = embeddingRepository.findByDocumentId(document.getId());
             if (existing.isPresent() && contentHash.equals(existing.get().getContentHash())) {
                 logger.debug("Embedding for document {} is up-to-date", document.getId());
                 return existing.get();
@@ -100,7 +100,8 @@ public class DocumentSimilarityService {
      * Find similar documents using cosine similarity
      */
     public List<SimilarityResult> findSimilar(Document document, int limit) {
-        Optional<DocumentEmbedding> docEmbedding = embeddingRepository.findByDocument(document);
+        // Use document ID for more reliable lookup
+        Optional<DocumentEmbedding> docEmbedding = embeddingRepository.findByDocumentId(document.getId());
         if (docEmbedding.isEmpty()) {
             logger.warn("No embedding found for document {}", document.getId());
             return Collections.emptyList();
@@ -158,12 +159,24 @@ public class DocumentSimilarityService {
     public void rebuildAllEmbeddings() {
         logger.info("Rebuilding all document embeddings...");
         List<Document> documents = documentRepository.findAll();
+        rebuildEmbeddings(documents);
+    }
+    
+    /**
+     * Rebuild embeddings for specific documents
+     */
+    @Transactional
+    public void rebuildEmbeddings(List<Document> documents) {
+        logger.info("Rebuilding embeddings for {} documents...", documents.size());
         int success = 0;
         int failed = 0;
         
         for (Document doc : documents) {
             try {
-                generateEmbedding(doc);
+                // Reload document with contents to avoid LazyInitializationException
+                Document reloadedDoc = documentRepository.findById(doc.getId())
+                    .orElseThrow(() -> new IllegalArgumentException("Document not found: " + doc.getId()));
+                generateEmbedding(reloadedDoc);
                 success++;
             } catch (Exception e) {
                 logger.error("Failed to generate embedding for document {}", doc.getId(), e);
