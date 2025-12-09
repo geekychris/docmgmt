@@ -37,11 +37,13 @@ import java.util.*;
 @PageTitle("Search | Document Management System")
 public class SearchView extends VerticalLayout {
     
-    @Autowired
-    private LuceneIndexService searchService;
-    
-    @Autowired
-    private DocumentService documentService;
+    private final LuceneIndexService searchService;
+    private final DocumentService documentService;
+    private final com.docmgmt.service.UserService userService;
+    private final com.docmgmt.service.ContentService contentService;
+    private final com.docmgmt.plugin.PluginService pluginService;
+    private final com.docmgmt.service.DocumentSimilarityService similarityService;
+    private final com.docmgmt.service.DocumentFieldExtractionService fieldExtractionService;
     
     private TextField searchField;
     private TextField nameField;
@@ -61,9 +63,20 @@ public class SearchView extends VerticalLayout {
     private static final int DEFAULT_PAGE_SIZE = 20;
     
     @Autowired
-    public SearchView(LuceneIndexService searchService, DocumentService documentService) {
+    public SearchView(LuceneIndexService searchService, 
+                     DocumentService documentService,
+                     com.docmgmt.service.UserService userService,
+                     com.docmgmt.service.ContentService contentService,
+                     com.docmgmt.plugin.PluginService pluginService,
+                     com.docmgmt.service.DocumentSimilarityService similarityService,
+                     com.docmgmt.service.DocumentFieldExtractionService fieldExtractionService) {
         this.searchService = searchService;
         this.documentService = documentService;
+        this.userService = userService;
+        this.contentService = contentService;
+        this.pluginService = pluginService;
+        this.similarityService = similarityService;
+        this.fieldExtractionService = fieldExtractionService;
         
         addClassName("search-view");
         setSizeFull();
@@ -334,8 +347,22 @@ public class SearchView extends VerticalLayout {
     }
     
     private void openDocument(Long documentId) {
-        getUI().ifPresent(ui -> {
-            ui.navigate("document/" + documentId);
-        });
+        Document document = documentService.findById(documentId);
+        if (document == null) {
+            Notification.show("Document not found", 3000, Notification.Position.BOTTOM_START)
+                .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            return;
+        }
+        
+        // Use a full-featured document dialog
+        new com.docmgmt.ui.components.DocumentDetailDialog(
+            document, 
+            documentService, 
+            userService, 
+            contentService, 
+            pluginService, 
+            similarityService,
+            fieldExtractionService
+        ).open();
     }
 }
