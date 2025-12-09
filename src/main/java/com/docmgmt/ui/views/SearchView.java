@@ -111,34 +111,39 @@ public class SearchView extends VerticalLayout {
         // Field-specific search fields
         VerticalLayout fieldSearchLayout = new VerticalLayout();
         fieldSearchLayout.setPadding(false);
+        fieldSearchLayout.setSpacing(false);
         fieldSearchLayout.setVisible(false);
         
         nameField = new TextField("Name");
-        nameField.setWidthFull();
-        nameField.setPlaceholder("Search in name field...");
+        nameField.setPlaceholder("Search in name...");
         
         descriptionField = new TextField("Description");
-        descriptionField.setWidthFull();
-        descriptionField.setPlaceholder("Search in description field...");
+        descriptionField.setPlaceholder("Search in description...");
         
         keywordsField = new TextField("Keywords");
-        keywordsField.setWidthFull();
-        keywordsField.setPlaceholder("Search in keywords field...");
+        keywordsField.setPlaceholder("Search in keywords...");
         
         tagsField = new TextField("Tags");
-        tagsField.setWidthFull();
-        tagsField.setPlaceholder("Search in tags field...");
+        tagsField.setPlaceholder("Search in tags...");
         
         contentField = new TextField("Content");
-        contentField.setWidthFull();
-        contentField.setPlaceholder("Search in content field...");
+        contentField.setPlaceholder("Search in content...");
+        
+        // Arrange fields in two rows to save space
+        HorizontalLayout row1 = new HorizontalLayout(nameField, descriptionField, keywordsField);
+        row1.setWidthFull();
+        row1.setSpacing(true);
+        
+        HorizontalLayout row2 = new HorizontalLayout(tagsField, contentField);
+        row2.setWidthFull();
+        row2.setSpacing(true);
         
         operatorGroup = new RadioButtonGroup<>();
         operatorGroup.setLabel("Operator");
         operatorGroup.setItems("AND", "OR");
         operatorGroup.setValue("AND");
         
-        fieldSearchLayout.add(nameField, descriptionField, keywordsField, tagsField, contentField, operatorGroup);
+        fieldSearchLayout.add(row1, row2, operatorGroup);
         
         // Search mode change listener
         searchMode.addValueChangeListener(event -> {

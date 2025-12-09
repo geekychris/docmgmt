@@ -100,6 +100,7 @@ public class FolderView extends VerticalLayout {
     private Button rebuildIndexButton;
     private Button batchExtractFieldsButton;
     private Button importDirectoryButton;
+    private Button editFolderButton;
     
     private H3 currentFolderLabel;
     
@@ -197,8 +198,16 @@ public class FolderView extends VerticalLayout {
         importDirectoryButton.setEnabled(false);
         importDirectoryButton.addClickListener(e -> openImportDirectoryDialog());
         
+        editFolderButton = new Button("Edit Folder", new Icon(VaadinIcon.EDIT));
+        editFolderButton.setEnabled(false);
+        editFolderButton.addClickListener(e -> {
+            if (currentFolder != null) {
+                openEditFolderDialog(currentFolder);
+            }
+        });
+        
         HorizontalLayout toolbar = new HorizontalLayout(
-            createFolderButton, createSubfolderButton, addDocumentButton, linkDocumentButton,
+            createFolderButton, createSubfolderButton, editFolderButton, addDocumentButton, linkDocumentButton,
             new Hr(), moveFoldersButton, moveToRootButton,
             new Hr(), rebuildIndexButton, batchExtractFieldsButton, importDirectoryButton
         );
@@ -234,8 +243,13 @@ public class FolderView extends VerticalLayout {
             return "0 items";
         }).setHeader("Contents").setResizable(true).setAutoWidth(true);
         
-        folderTree.addColumn(folder -> folder.getOwner() != null ? folder.getOwner().getUsername() : "-")
-            .setHeader("Owner").setResizable(true).setAutoWidth(true);
+        folderTree.addColumn(folder -> {
+            try {
+                return folder.getOwner() != null ? folder.getOwner().getUsername() : "-";
+            } catch (org.hibernate.LazyInitializationException e) {
+                return "-";
+            }
+        }).setHeader("Owner").setResizable(true).setAutoWidth(true);
         
         folderTree.addThemeVariants(GridVariant.LUMO_ROW_STRIPES);
         
@@ -356,6 +370,7 @@ public class FolderView extends VerticalLayout {
         currentFolder = folder;
         currentFolderLabel.setText("Contents of: " + folder.getName());
         createSubfolderButton.setEnabled(true);
+        editFolderButton.setEnabled(true);
         addDocumentButton.setEnabled(true);
         linkDocumentButton.setEnabled(true);
         transformFolderButton.setEnabled(true);
@@ -489,6 +504,103 @@ public class FolderView extends VerticalLayout {
                     
             } catch (Exception ex) {
                 Notification.show("Error creating folder: " + ex.getMessage(), 
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            }
+        });
+        saveButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        
+        HorizontalLayout buttons = new HorizontalLayout(cancelButton, saveButton);
+        buttons.setJustifyContentMode(FlexComponent.JustifyContentMode.END);
+        buttons.setWidthFull();
+        
+        VerticalLayout layout = new VerticalLayout(title, new Hr(), formLayout, buttons);
+        layout.setPadding(false);
+        layout.setSpacing(false);
+        
+        dialog.add(layout);
+        dialog.open();
+    }
+    
+    private void openEditFolderDialog(Folder folder) {
+        // Reload folder with all relationships to avoid lazy initialization issues
+        Folder managedFolder = folderService.findByIdWithRelationships(folder.getId());
+        
+        Dialog dialog = new Dialog();
+        dialog.setWidth("500px");
+        
+        H2 title = new H2("Edit Folder: " + managedFolder.getName());
+        
+        TextField nameField = new TextField("Folder Name");
+        nameField.setValue(managedFolder.getName() != null ? managedFolder.getName() : "");
+        nameField.setRequired(true);
+        nameField.setWidthFull();
+        
+        TextField pathField = new TextField("Path");
+        pathField.setValue(managedFolder.getPath() != null ? managedFolder.getPath() : "");
+        pathField.setWidthFull();
+        
+        TextArea descField = new TextArea("Description");
+        descField.setValue(managedFolder.getDescription() != null ? managedFolder.getDescription() : "");
+        descField.setWidthFull();
+        descField.setHeight("100px");
+        
+        ComboBox<User> ownerCombo = new ComboBox<>("Owner");
+        ownerCombo.setItems(userService.findAll());
+        ownerCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
+        ownerCombo.setValue(managedFolder.getOwner());
+        ownerCombo.setPlaceholder("Select owner...");
+        ownerCombo.setClearButtonVisible(true);
+        ownerCombo.setWidthFull();
+        
+        MultiSelectComboBox<User> authorsCombo = new MultiSelectComboBox<>("Authors");
+        authorsCombo.setItems(userService.findAll());
+        authorsCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
+        // Initialize and set authors if present
+        try {
+            if (managedFolder.getAuthors() != null) {
+                // Force initialization by calling size()
+                managedFolder.getAuthors().size();
+                if (!managedFolder.getAuthors().isEmpty()) {
+                    authorsCombo.setValue(managedFolder.getAuthors());
+                }
+            }
+        } catch (Exception e) {
+            // If authors can't be loaded, just skip setting them
+        }
+        authorsCombo.setPlaceholder("Search and select authors...");
+        authorsCombo.setClearButtonVisible(true);
+        authorsCombo.setWidthFull();
+        
+        FormLayout formLayout = new FormLayout(nameField, pathField, descField, ownerCombo, authorsCombo);
+        
+        Button cancelButton = new Button("Cancel", e -> dialog.close());
+        Button saveButton = new Button("Save", e -> {
+            if (nameField.isEmpty()) {
+                Notification.show("Folder name is required", 3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                return;
+            }
+            
+            try {
+                // Use transactional service method to update folder
+                folderService.updateFolder(
+                    managedFolder.getId(),
+                    nameField.getValue(),
+                    pathField.getValue(),
+                    descField.getValue(),
+                    ownerCombo.getValue(),
+                    authorsCombo.getValue()
+                );
+                refreshFolderTree();
+                refreshFolderContents();
+                dialog.close();
+                
+                Notification.show("Folder updated successfully", 3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                    
+            } catch (Exception ex) {
+                Notification.show("Error updating folder: " + ex.getMessage(), 
                     3000, Notification.Position.BOTTOM_START)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
             }

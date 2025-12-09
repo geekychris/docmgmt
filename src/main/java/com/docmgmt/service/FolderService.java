@@ -16,6 +16,8 @@ import java.util.List;
 @Service
 public class FolderService extends AbstractSysObjectService<Folder, FolderRepository> {
     
+    private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(FolderService.class);
+    
     @Autowired
     public FolderService(FolderRepository repository) {
         super(repository);
@@ -324,6 +326,14 @@ public class FolderService extends AbstractSysObjectService<Folder, FolderReposi
             folder.getOwner().getUsername();
         }
         
+        // Initialize folder's own authors
+        if (folder.getAuthors() != null) {
+            folder.getAuthors().size();
+            for (com.docmgmt.model.User author : folder.getAuthors()) {
+                author.getUsername();
+            }
+        }
+        
         // Initialize all child folders and their owners
         if (folder.getChildFolders() != null) {
             for (Folder child : folder.getChildFolders()) {
@@ -352,5 +362,45 @@ public class FolderService extends AbstractSysObjectService<Folder, FolderReposi
         }
         
         return folder;
+    }
+    
+    /**
+     * Update folder properties including authors
+     * This method ensures all updates happen within a single transaction
+     * @param folderId The folder ID
+     * @param name The new name
+     * @param path The new path
+     * @param description The new description
+     * @param owner The new owner
+     * @param authors The new set of authors
+     * @return The updated folder
+     */
+    @Transactional
+    public Folder updateFolder(Long folderId, String name, String path, String description, 
+                              com.docmgmt.model.User owner, java.util.Set<com.docmgmt.model.User> authors) {
+        Folder folder = findById(folderId);
+        
+        folder.setName(name);
+        folder.setPath(path);
+        folder.setDescription(description);
+        folder.setOwner(owner);
+        
+        // Update authors within transaction
+        // Initialize the collection first
+        if (folder.getAuthors() != null) {
+            folder.getAuthors().size(); // Force initialization
+            folder.getAuthors().clear();
+        }
+        if (authors != null && !authors.isEmpty()) {
+            logger.info("Adding {} authors to folder {}", authors.size(), folder.getName());
+            authors.forEach(author -> {
+                logger.debug("Adding author: {}", author.getUsername());
+                folder.addAuthor(author);
+            });
+        } else {
+            logger.info("No authors to add to folder {}", folder.getName());
+        }
+        
+        return save(folder);
     }
 }
