@@ -181,8 +181,9 @@ public class FolderHierarchyIntegrationTest {
         Folder loadedFolder = folderService.findById(folder.getId());
         assertEquals(1, loadedFolder.getItems().size());
         
-        // Remove document from folder
-        folderService.removeItemFromFolder(folder.getId(), doc);
+        // Remove document from folder (reload document to ensure it's managed)
+        Document managedDoc = documentService.findById(doc.getId());
+        folderService.removeItemFromFolder(folder.getId(), managedDoc);
         
         entityManager.flush();
         entityManager.clear();

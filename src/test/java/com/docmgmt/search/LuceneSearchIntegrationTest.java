@@ -88,10 +88,9 @@ public class LuceneSearchIntegrationTest {
                 .build();
         testDoc3 = (Report) documentService.save(testDoc3);
         
-        // Index all documents
-        searchService.indexDocument(testDoc1);
-        searchService.indexDocument(testDoc2);
-        searchService.indexDocument(testDoc3);
+        // Rebuild index with only test documents (clears existing index)
+        List<com.docmgmt.model.Document> testDocuments = List.of(testDoc1, testDoc2, testDoc3);
+        searchService.rebuildIndex(testDocuments);
     }
     
     @Test
