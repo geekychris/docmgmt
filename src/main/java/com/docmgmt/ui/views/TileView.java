@@ -485,24 +485,34 @@ public class TileView extends VerticalLayout implements HasUrlParameter<String> 
         VerticalLayout viewerLayout = new VerticalLayout();
         viewerLayout.setPadding(false);
         viewerLayout.setSpacing(true);
+        viewerLayout.setSizeFull();
         
         H3 viewerTitle = new H3("Content Viewer");
         viewerTitle.getStyle().set("margin", "0 0 1rem 0");
         
-        TextArea contentDisplay = new TextArea();
-        contentDisplay.setWidthFull();
-        contentDisplay.setHeight("500px");
-        contentDisplay.setReadOnly(true);
-        contentDisplay.setPlaceholder("Select a content rendition to view");
+        // Create a div to hold the viewer component (will be replaced dynamically)
+        Div viewerContainer = new Div();
+        viewerContainer.setWidthFull();
+        viewerContainer.setHeight("100%");
+        viewerContainer.getStyle()
+            .set("overflow", "auto")
+            .set("flex-grow", "1");
         
-        viewerLayout.add(viewerTitle, contentDisplay);
+        Span placeholder = new Span("Select a content rendition to view");
+        placeholder.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        viewerContainer.add(placeholder);
+        
+        viewerLayout.add(viewerTitle, viewerContainer);
         
         // Check if document has contents
         if (reloadedDoc.getContents() == null || reloadedDoc.getContents().isEmpty()) {
             Span noContent = new Span("This document has no content renditions.");
             noContent.getStyle().set("color", "var(--lumo-secondary-text-color)");
             contentListLayout.add(noContent);
-            contentDisplay.setValue("No content available for this document.");
+            viewerContainer.removeAll();
+            Span emptyMessage = new Span("No content available for this document.");
+            emptyMessage.getStyle().set("color", "var(--lumo-secondary-text-color)");
+            viewerContainer.add(emptyMessage);
         } else {
             // Create clickable content items
             for (com.docmgmt.model.Content content : reloadedDoc.getContents()) {
@@ -539,25 +549,91 @@ public class TileView extends VerticalLayout implements HasUrlParameter<String> 
                 contentItem.addClickListener(e -> {
                     try {
                         byte[] bytes = contentService.getContentBytes(content.getId());
-                        if (bytes != null && content.getContentType() != null && 
-                            (content.getContentType().startsWith("text/") || 
-                             content.getContentType().equals("application/json"))) {
-                            String contentText = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
-                            contentDisplay.setValue(contentText);
-                            viewerTitle.setText("Viewing: " + content.getName());
+                        viewerContainer.removeAll();
+                        viewerTitle.setText("Viewing: " + content.getName());
+                        
+                        if (bytes != null && content.getContentType() != null) {
+                            String contentType = content.getContentType();
+                            
+                            // PDF viewer
+                            if (contentType.equals("application/pdf")) {
+                                // Use Blob URL approach for cross-browser compatibility (Chrome/Safari)
+                                String base64Pdf = java.util.Base64.getEncoder().encodeToString(bytes);
+                                Div pdfViewer = new Div();
+                                pdfViewer.setId("pdf-viewer-" + content.getId());
+                                pdfViewer.setWidthFull();
+                                pdfViewer.setHeight("600px");
+                                viewerContainer.add(pdfViewer);
+                                
+                                // Create Blob URL and load PDF in iframe via JavaScript
+                                pdfViewer.getElement().executeJs(
+                                    "const base64Data = $0;" +
+                                    "const binaryString = atob(base64Data);" +
+                                    "const bytes = new Uint8Array(binaryString.length);" +
+                                    "for (let i = 0; i < binaryString.length; i++) {" +
+                                    "  bytes[i] = binaryString.charCodeAt(i);" +
+                                    "}" +
+                                    "const blob = new Blob([bytes], { type: 'application/pdf' });" +
+                                    "const url = URL.createObjectURL(blob);" +
+                                    "this.innerHTML = '<iframe src=\"' + url + '\" style=\"width: 100%; height: 100%; border: 1px solid var(--lumo-contrast-10pct);\" />';" +
+                                    "this.querySelector('iframe').onload = function() {" +
+                                    "  setTimeout(() => URL.revokeObjectURL(url), 1000);" +
+                                    "};",
+                                    base64Pdf
+                                );
+                            }
+                            // Markdown viewer
+                            else if (contentType.equals("text/markdown") || 
+                                     content.getName().toLowerCase().endsWith(".md")) {
+                                String markdownText = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+                                Div markdownViewer = new Div();
+                                markdownViewer.getElement().setProperty("innerHTML", convertMarkdownToHtml(markdownText));
+                                markdownViewer.getStyle()
+                                    .set("padding", "1rem")
+                                    .set("background", "var(--lumo-contrast-5pct)")
+                                    .set("border", "1px solid var(--lumo-contrast-10pct)")
+                                    .set("border-radius", "4px")
+                                    .set("overflow", "auto")
+                                    .set("max-height", "600px");
+                                viewerContainer.add(markdownViewer);
+                            }
+                            // Text viewer for all text/* types and JSON
+                            else if (contentType.startsWith("text/") || 
+                                     contentType.equals("application/json")) {
+                                String contentText = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+                                TextArea textViewer = new TextArea();
+                                textViewer.setValue(contentText);
+                                textViewer.setWidthFull();
+                                textViewer.setHeight("600px");
+                                textViewer.setReadOnly(true);
+                                textViewer.getStyle().set("font-family", "monospace");
+                                viewerContainer.add(textViewer);
+                            }
+                            // Binary content info
+                            else {
+                                Div infoDiv = new Div();
+                                infoDiv.getElement().setProperty("innerHTML",
+                                    "<div style='padding: 1rem; background: var(--lumo-contrast-5pct); border: 1px solid var(--lumo-contrast-10pct); border-radius: 4px;'>" +
+                                    "<h4 style='margin-top: 0;'>Binary Content Information</h4>" +
+                                    "<p><strong>Name:</strong> " + content.getName() + "</p>" +
+                                    "<p><strong>Type:</strong> " + contentType + "</p>" +
+                                    "<p><strong>Size:</strong> " + bytes.length + " bytes</p>" +
+                                    "<p><strong>Rendition:</strong> " + (content.isPrimary() ? "Primary" : "Secondary") + "</p>" +
+                                    "<p style='color: var(--lumo-secondary-text-color);'>[This is binary content and cannot be displayed]</p>" +
+                                    "</div>"
+                                );
+                                viewerContainer.add(infoDiv);
+                            }
                         } else {
-                            contentDisplay.setValue(
-                                "Binary Content Information:\n\n" +
-                                "Name: " + content.getName() + "\n" +
-                                "Type: " + content.getContentType() + "\n" +
-                                "Size: " + (bytes != null ? bytes.length + " bytes" : "empty") + "\n" +
-                                "Rendition: " + (content.isPrimary() ? "Primary" : "Secondary") + "\n\n" +
-                                "[This is binary content and cannot be displayed as text]"
-                            );
-                            viewerTitle.setText("Info: " + content.getName());
+                            Span errorMessage = new Span("No content data available");
+                            errorMessage.getStyle().set("color", "var(--lumo-error-text-color)");
+                            viewerContainer.add(errorMessage);
                         }
                     } catch (Exception ex) {
-                        contentDisplay.setValue("Error loading content: " + ex.getMessage());
+                        viewerContainer.removeAll();
+                        Span errorMessage = new Span("Error loading content: " + ex.getMessage());
+                        errorMessage.getStyle().set("color", "var(--lumo-error-text-color)");
+                        viewerContainer.add(errorMessage);
                         Notification.show("Failed to load content", 3000, Notification.Position.BOTTOM_START)
                             .addThemeVariants(NotificationVariant.LUMO_ERROR);
                     }
@@ -586,5 +662,38 @@ public class TileView extends VerticalLayout implements HasUrlParameter<String> 
         
         dialog.add(dialogLayout);
         dialog.open();
+    }
+    
+    /**
+     * Minimal Markdown to HTML converter for headings, bold/italic, code blocks, and links.
+     * This avoids adding heavy dependencies; adjust as needed for richer features.
+     */
+    private String convertMarkdownToHtml(String md) {
+        if (md == null || md.isEmpty()) return "";
+        String html = md;
+        // Escape basic HTML first
+        html = html.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        // Code blocks ```
+        html = html.replaceAll("(?s)```(.*?)```", "<pre><code>$1</code></pre>");
+        // Inline code `code`
+        html = html.replaceAll("`([^`]+)`", "<code>$1</code>");
+        // Headings # to ######
+        html = html.replaceAll("(?m)^######\\s+(.*)$", "<h6>$1</h6>");
+        html = html.replaceAll("(?m)^#####\\s+(.*)$", "<h5>$1</h5>");
+        html = html.replaceAll("(?m)^####\\s+(.*)$", "<h4>$1</h4>");
+        html = html.replaceAll("(?m)^###\\s+(.*)$", "<h3>$1</h3>");
+        html = html.replaceAll("(?m)^##\\s+(.*)$", "<h2>$1</h2>");
+        html = html.replaceAll("(?m)^#\\s+(.*)$", "<h1>$1</h1>");
+        // Bold **text** or __text__
+        html = html.replaceAll("\\*\\*([^*]+)\\*\\*", "<strong>$1</strong>");
+        html = html.replaceAll("__([^_]+)__", "<strong>$1</strong>");
+        // Italic *text* or _text_
+        html = html.replaceAll("(?<!\\*)\\*([^*]+)\\*(?!\\*)", "<em>$1</em>");
+        html = html.replaceAll("_([^_]+)_", "<em>$1</em>");
+        // Links [text](url)
+        html = html.replaceAll("\\[([^]]+)\\]\\(([^)]+)\\)", "<a href='$2' target='_blank' rel='noopener'>$1</a>");
+        // Paragraphs: wrap lines separated by blank line
+        html = html.replaceAll("(?m)^(?!<h\\d>|<pre>|</pre>|<ul>|<ol>|<li>|<p>|</p>|<blockquote>)([^\n]+)$", "<p>$1</p>");
+        return html;
     }
 }
