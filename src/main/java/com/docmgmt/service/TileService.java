@@ -171,7 +171,12 @@ public class TileService {
      */
     private String determineColor(TileConfiguration config, String folderName, 
                                   Document.DocumentType docType, Map<String, String> colorMap) {
-        switch (config.getColorStrategy()) {
+        TileConfiguration.ColorStrategy strategy = config.getColorStrategy();
+        if (strategy == null) {
+            strategy = TileConfiguration.ColorStrategy.NONE;
+        }
+        
+        switch (strategy) {
             case BY_FOLDER:
                 if (folderName != null && colorMap.containsKey(folderName)) {
                     return colorMap.get(folderName);

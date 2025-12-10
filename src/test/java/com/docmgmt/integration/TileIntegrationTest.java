@@ -68,6 +68,7 @@ public class TileIntegrationTest extends BaseTest {
         // Create test user
         testUser = User.builder()
             .username("testuser")
+            .name("Test User")
             .firstName("Test")
             .lastName("User")
             .email("test@example.com")
