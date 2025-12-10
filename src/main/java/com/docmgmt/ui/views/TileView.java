@@ -322,7 +322,11 @@ public class TileView extends VerticalLayout implements HasUrlParameter<String> 
         // Links
         HorizontalLayout linksLayout = new HorizontalLayout();
         linksLayout.setSpacing(true);
-        linksLayout.getStyle().set("margin-top", "auto");
+        linksLayout.setWidthFull();
+        linksLayout.getStyle()
+            .set("margin-top", "auto")
+            .set("flex-wrap", "wrap")
+            .set("gap", "0.5rem");
         
         if (config.getShowDetailLink() && (config.getHideEditButtons() == null || !config.getHideEditButtons())) {
             Button viewButton = new Button("View", new Icon(VaadinIcon.EYE));
