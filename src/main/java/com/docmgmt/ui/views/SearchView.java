@@ -44,6 +44,7 @@ public class SearchView extends VerticalLayout {
     private final com.docmgmt.plugin.PluginService pluginService;
     private final com.docmgmt.service.DocumentSimilarityService similarityService;
     private final com.docmgmt.service.DocumentFieldExtractionService fieldExtractionService;
+    private final com.docmgmt.service.FileStoreService fileStoreService;
     
     private TextField searchField;
     private TextField nameField;
@@ -69,7 +70,8 @@ public class SearchView extends VerticalLayout {
                      com.docmgmt.service.ContentService contentService,
                      com.docmgmt.plugin.PluginService pluginService,
                      com.docmgmt.service.DocumentSimilarityService similarityService,
-                     com.docmgmt.service.DocumentFieldExtractionService fieldExtractionService) {
+                     com.docmgmt.service.DocumentFieldExtractionService fieldExtractionService,
+                     com.docmgmt.service.FileStoreService fileStoreService) {
         this.searchService = searchService;
         this.documentService = documentService;
         this.userService = userService;
@@ -77,6 +79,7 @@ public class SearchView extends VerticalLayout {
         this.pluginService = pluginService;
         this.similarityService = similarityService;
         this.fieldExtractionService = fieldExtractionService;
+        this.fileStoreService = fileStoreService;
         
         addClassName("search-view");
         setSizeFull();
@@ -378,7 +381,8 @@ public class SearchView extends VerticalLayout {
             contentService, 
             pluginService, 
             similarityService,
-            fieldExtractionService
+            fieldExtractionService,
+            fileStoreService
         ).open();
     }
     

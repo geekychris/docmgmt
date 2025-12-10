@@ -21,6 +21,7 @@ import com.docmgmt.ui.components.PluginResultDialog;
 import com.docmgmt.transformer.TransformerRegistry;
 import com.docmgmt.ui.MainLayout;
 import com.docmgmt.ui.util.DocumentFieldRenderer;
+import com.docmgmt.ui.util.ColorPickerUtil;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.checkbox.Checkbox;
@@ -83,6 +84,7 @@ public class FolderView extends VerticalLayout {
     private final PluginService pluginService;
     private final DocumentSimilarityService similarityService;
     private final LuceneIndexService luceneIndexService;
+    private final com.docmgmt.service.TileService tileService;
     
     private TreeGrid<Folder> folderTree;
     private Grid<SysObject> itemsGrid;
@@ -101,6 +103,8 @@ public class FolderView extends VerticalLayout {
     private Button batchExtractFieldsButton;
     private Button importDirectoryButton;
     private Button editFolderButton;
+    private Button viewTilesButton;
+    private Button configureTilesButton;
     
     private H3 currentFolderLabel;
     
@@ -109,7 +113,7 @@ public class FolderView extends VerticalLayout {
                      ContentService contentService, FileStoreService fileStoreService,
                      TransformerRegistry transformerRegistry, DocumentFieldExtractionService fieldExtractionService,
                      PluginService pluginService, DocumentSimilarityService similarityService,
-                     LuceneIndexService luceneIndexService) {
+                     LuceneIndexService luceneIndexService, com.docmgmt.service.TileService tileService) {
         this.folderService = folderService;
         this.documentService = documentService;
         this.userService = userService;
@@ -120,6 +124,7 @@ public class FolderView extends VerticalLayout {
         this.pluginService = pluginService;
         this.similarityService = similarityService;
         this.luceneIndexService = luceneIndexService;
+        this.tileService = tileService;
         
         addClassName("folder-view");
         setSizeFull();
@@ -206,8 +211,27 @@ public class FolderView extends VerticalLayout {
             }
         });
         
+        viewTilesButton = new Button("View as Tiles", new Icon(VaadinIcon.GRID_SMALL));
+        viewTilesButton.addThemeVariants(ButtonVariant.LUMO_SUCCESS);
+        viewTilesButton.setEnabled(false);
+        viewTilesButton.addClickListener(e -> {
+            if (currentFolder != null) {
+                getUI().ifPresent(ui -> ui.navigate("tiles/" + currentFolder.getName()));
+            }
+        });
+        
+        configureTilesButton = new Button("Configure Tiles", new Icon(VaadinIcon.COG));
+        configureTilesButton.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
+        configureTilesButton.setEnabled(false);
+        configureTilesButton.addClickListener(e -> {
+            if (currentFolder != null) {
+                openTileConfigurationDialog();
+            }
+        });
+        
         HorizontalLayout toolbar = new HorizontalLayout(
             createFolderButton, createSubfolderButton, editFolderButton, addDocumentButton, linkDocumentButton,
+            new Hr(), viewTilesButton, configureTilesButton,
             new Hr(), moveFoldersButton, moveToRootButton,
             new Hr(), rebuildIndexButton, batchExtractFieldsButton, importDirectoryButton
         );
@@ -335,6 +359,30 @@ public class FolderView extends VerticalLayout {
         itemsGrid.addColumn(item -> item.getOwner() != null ? item.getOwner().getUsername() : "-")
             .setHeader("Owner").setResizable(true).setAutoWidth(true);
         
+        // Add Actions column with View and Edit buttons
+        itemsGrid.addComponentColumn(item -> {
+            HorizontalLayout actions = new HorizontalLayout();
+            actions.setSpacing(true);
+            
+            if (item instanceof Document) {
+                Document doc = (Document) item;
+                
+                Button viewButton = new Button(new Icon(VaadinIcon.EYE));
+                viewButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
+                viewButton.getElement().setAttribute("title", "View Details");
+                viewButton.addClickListener(e -> openDocumentDetailDialog(doc, false));
+                
+                Button editButton = new Button(new Icon(VaadinIcon.EDIT));
+                editButton.addThemeVariants(ButtonVariant.LUMO_SMALL, ButtonVariant.LUMO_TERTIARY);
+                editButton.getElement().setAttribute("title", "Edit Document");
+                editButton.addClickListener(e -> openDocumentDetailDialog(doc, true));
+                
+                actions.add(viewButton, editButton);
+            }
+            
+            return actions;
+        }).setHeader("Actions").setWidth("120px").setFlexGrow(0);
+        
         itemsGrid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES);
         
         itemsGrid.addSelectionListener(event -> {
@@ -373,6 +421,8 @@ public class FolderView extends VerticalLayout {
         editFolderButton.setEnabled(true);
         addDocumentButton.setEnabled(true);
         linkDocumentButton.setEnabled(true);
+        viewTilesButton.setEnabled(true);
+        configureTilesButton.setEnabled(true);
         transformFolderButton.setEnabled(true);
         rebuildIndexButton.setEnabled(true);
         importDirectoryButton.setEnabled(true);
@@ -453,6 +503,12 @@ public class FolderView extends VerticalLayout {
         descField.setWidthFull();
         descField.setHeight("100px");
         
+        TextField urlField = new TextField("URL");
+        urlField.setPlaceholder("https://example.com");
+        urlField.setWidthFull();
+        
+        ComboBox<String> colorCombo = ColorPickerUtil.createColorPicker(null);
+        
         ComboBox<User> ownerCombo = new ComboBox<>("Owner");
         ownerCombo.setItems(userService.findAll());
         ownerCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
@@ -467,7 +523,7 @@ public class FolderView extends VerticalLayout {
         authorsCombo.setClearButtonVisible(true);
         authorsCombo.setWidthFull();
         
-        FormLayout formLayout = new FormLayout(nameField, pathField, descField, ownerCombo, authorsCombo);
+        FormLayout formLayout = new FormLayout(nameField, pathField, descField, urlField, colorCombo, ownerCombo, authorsCombo);
         
         Button cancelButton = new Button("Cancel", e -> dialog.close());
         Button saveButton = new Button("Create", e -> {
@@ -482,6 +538,8 @@ public class FolderView extends VerticalLayout {
                     .name(nameField.getValue())
                     .path(pathField.getValue())
                     .description(descField.getValue())
+                    .url(urlField.getValue())
+                    .color(colorCombo.getValue())
                     .owner(ownerCombo.getValue())
                     .build();
                 
@@ -545,6 +603,13 @@ public class FolderView extends VerticalLayout {
         descField.setWidthFull();
         descField.setHeight("100px");
         
+        TextField urlField = new TextField("URL");
+        urlField.setValue(managedFolder.getUrl() != null ? managedFolder.getUrl() : "");
+        urlField.setPlaceholder("https://example.com");
+        urlField.setWidthFull();
+        
+        ComboBox<String> colorCombo = ColorPickerUtil.createColorPicker(managedFolder.getColor());
+        
         ComboBox<User> ownerCombo = new ComboBox<>("Owner");
         ownerCombo.setItems(userService.findAll());
         ownerCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
@@ -572,7 +637,7 @@ public class FolderView extends VerticalLayout {
         authorsCombo.setClearButtonVisible(true);
         authorsCombo.setWidthFull();
         
-        FormLayout formLayout = new FormLayout(nameField, pathField, descField, ownerCombo, authorsCombo);
+        FormLayout formLayout = new FormLayout(nameField, pathField, descField, urlField, colorCombo, ownerCombo, authorsCombo);
         
         Button cancelButton = new Button("Cancel", e -> dialog.close());
         Button saveButton = new Button("Save", e -> {
@@ -589,6 +654,8 @@ public class FolderView extends VerticalLayout {
                     nameField.getValue(),
                     pathField.getValue(),
                     descField.getValue(),
+                    urlField.getValue(),
+                    colorCombo.getValue(),
                     ownerCombo.getValue(),
                     authorsCombo.getValue()
                 );
@@ -638,6 +705,12 @@ public class FolderView extends VerticalLayout {
         descField.setWidthFull();
         descField.setHeight("100px");
         
+        TextField docUrlField = new TextField("URL");
+        docUrlField.setPlaceholder("https://example.com");
+        docUrlField.setWidthFull();
+        
+        ComboBox<String> docColorCombo = ColorPickerUtil.createColorPicker(null);
+        
         ComboBox<User> ownerCombo = new ComboBox<>("Owner");
         ownerCombo.setItems(userService.findAll());
         ownerCombo.setItemLabelGenerator(user -> user.getUsername() + " (" + user.getFullName() + ")");
@@ -652,7 +725,7 @@ public class FolderView extends VerticalLayout {
         docAuthorsCombo.setClearButtonVisible(true);
         docAuthorsCombo.setWidthFull();
         
-        FormLayout formLayout = new FormLayout(nameField, typeCombo, descField, ownerCombo, docAuthorsCombo);
+        FormLayout formLayout = new FormLayout(nameField, typeCombo, descField, docUrlField, docColorCombo, ownerCombo, docAuthorsCombo);
         
         Button cancelButton = new Button("Cancel", e -> dialog.close());
         Button saveButton = new Button("Create", e -> {
@@ -667,7 +740,9 @@ public class FolderView extends VerticalLayout {
                 Document doc = createDocumentByType(typeCombo.getValue(), 
                     nameField.getValue(), descField.getValue());
                 
-                // Set owner and authors
+                // Set URL, color, owner and authors
+                doc.setUrl(docUrlField.getValue());
+                doc.setColor(docColorCombo.getValue());
                 doc.setOwner(ownerCombo.getValue());
                 if (docAuthorsCombo.getValue() != null && !docAuthorsCombo.getValue().isEmpty()) {
                     docAuthorsCombo.getValue().forEach(doc::addAuthor);
@@ -972,7 +1047,8 @@ public class FolderView extends VerticalLayout {
                 contentService,
                 pluginService,
                 similarityService,
-                fieldExtractionService
+                fieldExtractionService,
+                fileStoreService
             );
             detailDialog.open();
             return;
@@ -1043,6 +1119,15 @@ public class FolderView extends VerticalLayout {
             descriptionField.setHeight("100px");
             descriptionField.addValueChangeListener(e -> reloadedDoc.setDescription(e.getValue()));
             
+            TextField urlField = new TextField("URL");
+            urlField.setValue(reloadedDoc.getUrl() != null ? reloadedDoc.getUrl() : "");
+            urlField.setPlaceholder("https://example.com");
+            urlField.setWidthFull();
+            urlField.addValueChangeListener(e -> reloadedDoc.setUrl(e.getValue()));
+            
+            ComboBox<String> colorCombo = ColorPickerUtil.createColorPicker(reloadedDoc.getColor());
+            colorCombo.addValueChangeListener(e -> reloadedDoc.setColor(e.getValue()));
+            
             TextField keywordsField = new TextField("Keywords");
             keywordsField.setValue(reloadedDoc.getKeywords() != null ? reloadedDoc.getKeywords() : "");
             keywordsField.setWidthFull();
@@ -1087,7 +1172,7 @@ public class FolderView extends VerticalLayout {
                 }
             });
             
-            formLayout.add(nameField, descriptionField, keywordsField, tagsField, ownerCombo, authorsCombo);
+            formLayout.add(nameField, descriptionField, urlField, colorCombo, keywordsField, tagsField, ownerCombo, authorsCombo);
             
             // Add type-specific editable fields using DocumentFieldRenderer
             DocumentFieldRenderer.renderEditableFields(reloadedDoc, formLayout, ownerCombo, authorsCombo, userService.findAll());
@@ -2239,6 +2324,17 @@ public class FolderView extends VerticalLayout {
                                document.getMajorVersion() + "." + document.getMinorVersion() + ")");
         docInfo.getStyle().set("color", "var(--lumo-secondary-text-color)");
         
+        // Content name field
+        TextField contentNameField = new TextField("Content Name");
+        contentNameField.setWidthFull();
+        contentNameField.setPlaceholder("Enter content name (leave empty to use filename)");
+        
+        // Rendition type selection
+        RadioButtonGroup<String> renditionType = new RadioButtonGroup<>();
+        renditionType.setLabel("Rendition Type");
+        renditionType.setItems("Primary", "Secondary");
+        renditionType.setValue("Primary");
+        
         // Storage type selection
         RadioButtonGroup<String> storageType = new RadioButtonGroup<>();
         storageType.setLabel("Storage Type");
@@ -2303,15 +2399,18 @@ public class FolderView extends VerticalLayout {
                 
                 // Create a custom MultipartFile from the buffer
                 byte[] fileBytes = buffer.getInputStream().readAllBytes();
-                String fileName = buffer.getFileName();
+                String originalFileName = buffer.getFileName();
+                // Use custom content name if provided, otherwise use original filename
+                String finalContentName = contentNameField.isEmpty() ? 
+                    originalFileName : contentNameField.getValue();
                 String contentType = buffer.getFileData().getMimeType();
                 
                 MultipartFile multipartFile = new MultipartFile() {
                     @Override
-                    public String getName() { return fileName; }
+                    public String getName() { return finalContentName; }
                     
                     @Override
-                    public String getOriginalFilename() { return fileName; }
+                    public String getOriginalFilename() { return finalContentName; }
                     
                     @Override
                     public String getContentType() { return contentType; }
@@ -2351,6 +2450,11 @@ public class FolderView extends VerticalLayout {
                     );
                 }
                 
+                // Set rendition type
+                boolean isPrimary = "Primary".equals(renditionType.getValue());
+                content.setPrimary(isPrimary);
+                contentService.save(content);
+                
                 Notification.show("Content uploaded successfully", 
                     3000, Notification.Position.BOTTOM_START)
                     .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
@@ -2369,8 +2473,9 @@ public class FolderView extends VerticalLayout {
         
         // Layout
         FormLayout formLayout = new FormLayout();
-        formLayout.add(docInfo, storageType, fileStoreCombo, upload, uploadStatus);
+        formLayout.add(docInfo, contentNameField, renditionType, storageType, fileStoreCombo, upload, uploadStatus);
         formLayout.setColspan(docInfo, 2);
+        formLayout.setColspan(contentNameField, 2);
         formLayout.setColspan(upload, 2);
         formLayout.setColspan(uploadStatus, 2);
         
@@ -3281,5 +3386,221 @@ public class FolderView extends VerticalLayout {
                 collectDocumentsFromFolder(childFolder, documents, recursive);
             }
         }
+    }
+    
+    /**
+     * Open the tile configuration dialog for the current folder
+     */
+    private void openTileConfigurationDialog() {
+        Dialog dialog = new Dialog();
+        dialog.setWidth("700px");
+        
+        H2 title = new H2("Tile Configuration: " + currentFolder.getName());
+        
+        Span helpText = new Span("Configure how documents are displayed as tiles in this folder.");
+        helpText.getStyle()
+            .set("color", "var(--lumo-secondary-text-color)")
+            .set("margin-bottom", "1rem");
+        
+        // Get current configuration
+        com.docmgmt.model.TileConfiguration config = tileService.getConfiguration(currentFolder.getId());
+        
+        // Group by subfolder
+        Checkbox groupBySubfolderCheckbox = new Checkbox("Group by Subfolder");
+        groupBySubfolderCheckbox.setValue(config.getGroupBySubfolder() != null ? config.getGroupBySubfolder() : false);
+        groupBySubfolderCheckbox.getStyle().set("margin-bottom", "0.5rem");
+        Span groupHelp = new Span("Organize tiles by their containing subfolder");
+        groupHelp.getStyle().set("font-size", "0.875rem").set("color", "var(--lumo-secondary-text-color)");
+        
+        // Visible fields
+        TextField visibleFieldsField = new TextField("Visible Fields");
+        visibleFieldsField.setValue(config.getVisibleFields() != null ? config.getVisibleFields() : "name,description,url");
+        visibleFieldsField.setWidthFull();
+        visibleFieldsField.setPlaceholder("name,description,url,documentType,tags");
+        Span fieldsHelp = new Span("Comma-separated list of fields to display on each tile");
+        fieldsHelp.getStyle().set("font-size", "0.875rem").set("color", "var(--lumo-secondary-text-color)");
+        
+        // Color strategy
+        ComboBox<com.docmgmt.model.TileConfiguration.ColorStrategy> colorStrategyCombo = 
+            new ComboBox<>("Color Strategy");
+        colorStrategyCombo.setItems(com.docmgmt.model.TileConfiguration.ColorStrategy.values());
+        colorStrategyCombo.setValue(config.getColorStrategy());
+        colorStrategyCombo.setWidthFull();
+        Span colorHelp = new Span("How to color-code tiles (NONE, BY_FOLDER, BY_TYPE, BY_TAG, CUSTOM)");
+        colorHelp.getStyle().set("font-size", "0.875rem").set("color", "var(--lumo-secondary-text-color)");
+        
+        // Color mappings
+        TextArea colorMappingsArea = new TextArea("Custom Color Mappings (JSON)");
+        colorMappingsArea.setValue(config.getColorMappings() != null ? config.getColorMappings() : "");
+        colorMappingsArea.setWidthFull();
+        colorMappingsArea.setHeight("100px");
+        colorMappingsArea.setPlaceholder("{\"ARTICLE\": \"#FF5733\", \"REPORT\": \"#33FF57\"}");
+        Span mappingsHelp = new Span("JSON object mapping keys to hex colors (used with CUSTOM strategy)");
+        mappingsHelp.getStyle().set("font-size", "0.875rem").set("color", "var(--lumo-secondary-text-color)");
+        
+        // Tile size
+        ComboBox<com.docmgmt.model.TileConfiguration.TileSize> tileSizeCombo = 
+            new ComboBox<>("Tile Size");
+        tileSizeCombo.setItems(com.docmgmt.model.TileConfiguration.TileSize.values());
+        tileSizeCombo.setValue(config.getTileSize());
+        tileSizeCombo.setWidthFull();
+        
+        // Sort order
+        ComboBox<com.docmgmt.model.TileConfiguration.SortOrder> sortOrderCombo = 
+            new ComboBox<>("Sort Order");
+        sortOrderCombo.setItems(com.docmgmt.model.TileConfiguration.SortOrder.values());
+        sortOrderCombo.setValue(config.getSortOrder());
+        sortOrderCombo.setWidthFull();
+        
+        // Show links
+        Checkbox showDetailLinkCheckbox = new Checkbox("Show Detail Link");
+        showDetailLinkCheckbox.setValue(config.getShowDetailLink() != null ? config.getShowDetailLink() : true);
+        
+        Checkbox showUrlLinkCheckbox = new Checkbox("Show URL Link");
+        showUrlLinkCheckbox.setValue(config.getShowUrlLink() != null ? config.getShowUrlLink() : true);
+        
+        Checkbox hideNavigationCheckbox = new Checkbox("Hide Navigation Panel");
+        hideNavigationCheckbox.setValue(config.getHideNavigation() != null ? config.getHideNavigation() : false);
+        
+        Checkbox hideEditButtonsCheckbox = new Checkbox("Hide Edit Buttons");
+        hideEditButtonsCheckbox.setValue(config.getHideEditButtons() != null ? config.getHideEditButtons() : false);
+        
+        com.vaadin.flow.component.textfield.NumberField backgroundOpacityField = 
+            new com.vaadin.flow.component.textfield.NumberField("Background Color Opacity");
+        backgroundOpacityField.setMin(0.0);
+        backgroundOpacityField.setMax(1.0);
+        backgroundOpacityField.setStep(0.05);
+        backgroundOpacityField.setValue(config.getBackgroundColorOpacity() != null ? config.getBackgroundColorOpacity() : 0.05);
+        backgroundOpacityField.setWidthFull();
+        Span opacityHelp = new Span("0.0 = no background, 1.0 = full color (recommended: 0.03-0.10)");
+        opacityHelp.getStyle().set("font-size", "0.875rem").set("color", "var(--lumo-secondary-text-color)");
+        
+        HorizontalLayout checkboxesLayout = new HorizontalLayout(showDetailLinkCheckbox, showUrlLinkCheckbox, 
+                                                                  hideNavigationCheckbox, hideEditButtonsCheckbox);
+        checkboxesLayout.setSpacing(true);
+        
+        // Form layout
+        FormLayout formLayout = new FormLayout();
+        formLayout.setResponsiveSteps(
+            new FormLayout.ResponsiveStep("0", 1),
+            new FormLayout.ResponsiveStep("500px", 2)
+        );
+        
+        VerticalLayout groupSection = new VerticalLayout(groupBySubfolderCheckbox, groupHelp);
+        groupSection.setPadding(false);
+        groupSection.setSpacing(false);
+        formLayout.add(groupSection, 2);
+        
+        VerticalLayout fieldsSection = new VerticalLayout(visibleFieldsField, fieldsHelp);
+        fieldsSection.setPadding(false);
+        fieldsSection.setSpacing(false);
+        formLayout.add(fieldsSection, 2);
+        
+        VerticalLayout colorSection = new VerticalLayout(colorStrategyCombo, colorHelp);
+        colorSection.setPadding(false);
+        colorSection.setSpacing(false);
+        formLayout.add(colorSection);
+        
+        formLayout.add(tileSizeCombo);
+        formLayout.add(sortOrderCombo, 2);
+        
+        VerticalLayout mappingsSection = new VerticalLayout(colorMappingsArea, mappingsHelp);
+        mappingsSection.setPadding(false);
+        mappingsSection.setSpacing(false);
+        formLayout.add(mappingsSection, 2);
+        
+        formLayout.add(checkboxesLayout, 2);
+        
+        VerticalLayout opacitySection = new VerticalLayout(backgroundOpacityField, opacityHelp);
+        opacitySection.setPadding(false);
+        opacitySection.setSpacing(false);
+        formLayout.add(opacitySection, 2);
+        
+        // Buttons
+        Button cancelButton = new Button("Cancel", e -> dialog.close());
+        
+        Button saveButton = new Button("Save", e -> {
+            try {
+                com.docmgmt.dto.TileConfigurationDTO dto = com.docmgmt.dto.TileConfigurationDTO.builder()
+                    .id(config.getId())
+                    .folderId(currentFolder.getId())
+                    .groupBySubfolder(groupBySubfolderCheckbox.getValue())
+                    .visibleFields(visibleFieldsField.getValue())
+                    .colorStrategy(colorStrategyCombo.getValue() != null ? colorStrategyCombo.getValue().name() : null)
+                    .colorMappings(colorMappingsArea.getValue())
+                    .tileSize(tileSizeCombo.getValue() != null ? tileSizeCombo.getValue().name() : null)
+                    .showDetailLink(showDetailLinkCheckbox.getValue())
+                    .showUrlLink(showUrlLinkCheckbox.getValue())
+                    .sortOrder(sortOrderCombo.getValue() != null ? sortOrderCombo.getValue().name() : null)
+                    .hideNavigation(hideNavigationCheckbox.getValue())
+                    .hideEditButtons(hideEditButtonsCheckbox.getValue())
+                    .backgroundColorOpacity(backgroundOpacityField.getValue())
+                    .build();
+                
+                tileService.saveConfiguration(dto);
+                
+                Notification.show("Tile configuration saved successfully", 
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                
+                dialog.close();
+                
+            } catch (Exception ex) {
+                logger.error("Error saving tile configuration", ex);
+                Notification.show("Error saving configuration: " + ex.getMessage(), 
+                    5000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            }
+        });
+        saveButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        
+        Button previewButton = new Button("Save & Preview", new Icon(VaadinIcon.EYE), e -> {
+            // First save
+            try {
+                com.docmgmt.dto.TileConfigurationDTO dto = com.docmgmt.dto.TileConfigurationDTO.builder()
+                    .id(config.getId())
+                    .folderId(currentFolder.getId())
+                    .groupBySubfolder(groupBySubfolderCheckbox.getValue())
+                    .visibleFields(visibleFieldsField.getValue())
+                    .colorStrategy(colorStrategyCombo.getValue() != null ? colorStrategyCombo.getValue().name() : null)
+                    .colorMappings(colorMappingsArea.getValue())
+                    .tileSize(tileSizeCombo.getValue() != null ? tileSizeCombo.getValue().name() : null)
+                    .showDetailLink(showDetailLinkCheckbox.getValue())
+                    .showUrlLink(showUrlLinkCheckbox.getValue())
+                    .sortOrder(sortOrderCombo.getValue() != null ? sortOrderCombo.getValue().name() : null)
+                    .build();
+                
+                tileService.saveConfiguration(dto);
+                dialog.close();
+                
+                // Then navigate to tile view
+                getUI().ifPresent(ui -> ui.navigate("tiles/" + currentFolder.getName()));
+                
+            } catch (Exception ex) {
+                logger.error("Error saving tile configuration", ex);
+                Notification.show("Error saving configuration: " + ex.getMessage(), 
+                    5000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            }
+        });
+        previewButton.addThemeVariants(ButtonVariant.LUMO_SUCCESS);
+        
+        HorizontalLayout buttons = new HorizontalLayout(cancelButton, saveButton, previewButton);
+        buttons.setJustifyContentMode(FlexComponent.JustifyContentMode.END);
+        buttons.setWidthFull();
+        
+        VerticalLayout layout = new VerticalLayout(
+            title,
+            helpText,
+            new Hr(),
+            formLayout,
+            new Hr(),
+            buttons
+        );
+        layout.setPadding(true);
+        layout.setSpacing(true);
+        
+        dialog.add(layout);
+        dialog.open();
     }
 }

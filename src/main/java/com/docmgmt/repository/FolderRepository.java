@@ -53,4 +53,26 @@ public interface FolderRepository extends BaseSysObjectRepository<Folder> {
      */
     @org.springframework.data.jpa.repository.Query("SELECT f FROM Folder f JOIN f.items i WHERE i = :item")
     List<Folder> findByItemsContaining(@org.springframework.data.repository.query.Param("item") SysObject item);
+    
+    /**
+     * Find folder by ID with items and child folders eagerly loaded
+     * @param id The folder ID
+     * @return The folder with items and children loaded
+     */
+    @org.springframework.data.jpa.repository.Query("SELECT DISTINCT f FROM Folder f " +
+        "LEFT JOIN FETCH f.items " +
+        "LEFT JOIN FETCH f.childFolders " +
+        "WHERE f.id = :id")
+    java.util.Optional<Folder> findByIdWithItemsAndChildren(@org.springframework.data.repository.query.Param("id") Long id);
+    
+    /**
+     * Find all folders by name with items and child folders eagerly loaded
+     * @param name The folder name
+     * @return List of folders with items and children loaded
+     */
+    @org.springframework.data.jpa.repository.Query("SELECT DISTINCT f FROM Folder f " +
+        "LEFT JOIN FETCH f.items " +
+        "LEFT JOIN FETCH f.childFolders " +
+        "WHERE f.name = :name")
+    List<Folder> findByNameWithItemsAndChildren(@org.springframework.data.repository.query.Param("name") String name);
 }

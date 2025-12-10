@@ -32,6 +32,12 @@ public class SysObject {
     @NotBlank(message = "Name is required")
     private String name;
 
+    @Column(name = "url", length = 2048)
+    private String url;
+
+    @Column(name = "color", length = 20)
+    private String color;
+
     @Column(nullable = false, name = "major_version")
     @Builder.Default
     private Integer majorVersion = 1;
@@ -181,6 +187,8 @@ public class SysObject {
      */
     protected void copyAttributesTo(SysObject target) {
         target.setName(this.getName());
+        target.setUrl(this.getUrl());
+        target.setColor(this.getColor());
         target.setMajorVersion(this.getMajorVersion());
         target.setMinorVersion(this.getMinorVersion());
         target.setOwner(this.getOwner());

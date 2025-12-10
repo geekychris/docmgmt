@@ -356,7 +356,7 @@ public class DocumentFieldRenderer {
      */
     private static boolean isBaseField(String fieldName) {
         Set<String> baseFields = new HashSet<>(Arrays.asList(
-            "name", "description", "keywords", "tags", "owner", "authors"
+            "name", "description", "url", "keywords", "tags", "owner", "authors"
         ));
         return baseFields.contains(fieldName);
     }
@@ -379,7 +379,7 @@ public class DocumentFieldRenderer {
     private static List<FieldInfo> sortFields(List<FieldInfo> fields, Document document) {
         // Define base field order
         List<String> baseFieldOrder = Arrays.asList(
-            "name", "documentType", "description", "keywords", "tags", 
+            "name", "documentType", "description", "url", "keywords", "tags", 
             "owner", "authors"
         );
         

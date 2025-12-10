@@ -68,6 +68,11 @@ public class DocumentDetailView extends VerticalLayout implements HasUrlParamete
     @Override
     public void setParameter(BeforeEvent event, @OptionalParameter Long documentId) {
         if (documentId != null) {
+            // Check for edit query parameter
+            Map<String, List<String>> params = event.getLocation().getQueryParameters().getParameters();
+            if (params.containsKey("edit") && "true".equalsIgnoreCase(params.get("edit").get(0))) {
+                editMode = true;
+            }
             loadDocument(documentId);
         } else {
             showError("No document ID provided");

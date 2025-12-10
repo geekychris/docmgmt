@@ -4,6 +4,7 @@ import com.docmgmt.dto.FieldSuggestionDTO;
 import com.docmgmt.dto.PluginInfoDTO;
 import com.docmgmt.model.Content;
 import com.docmgmt.model.Document;
+import com.docmgmt.model.FileStore;
 import com.docmgmt.model.User;
 import com.docmgmt.plugin.PluginResponse;
 import com.docmgmt.plugin.PluginService;
@@ -11,13 +12,16 @@ import com.docmgmt.service.*;
 import com.docmgmt.ui.util.DocumentFieldRenderer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.multipart.MultipartFile;
 import com.vaadin.flow.component.Text;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.contextmenu.MenuItem;
 import com.vaadin.flow.component.contextmenu.SubMenu;
 import com.vaadin.flow.component.dialog.Dialog;
+import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.H3;
@@ -31,6 +35,10 @@ import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.radiobutton.RadioButtonGroup;
+import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.component.upload.Upload;
+import com.vaadin.flow.component.upload.receivers.MemoryBuffer;
 
 import java.util.HashMap;
 import java.util.List;
@@ -52,6 +60,7 @@ public class DocumentDetailDialog extends Dialog {
     private final PluginService pluginService;
     private final DocumentSimilarityService similarityService;
     private final DocumentFieldExtractionService fieldExtractionService;
+    private final FileStoreService fileStoreService;
     
     // UI components that need to be refreshed
     private Grid<Content> contentGrid;
@@ -63,7 +72,8 @@ public class DocumentDetailDialog extends Dialog {
                                ContentService contentService,
                                PluginService pluginService,
                                DocumentSimilarityService similarityService,
-                               DocumentFieldExtractionService fieldExtractionService) {
+                               DocumentFieldExtractionService fieldExtractionService,
+                               FileStoreService fileStoreService) {
         this.document = document;
         this.documentService = documentService;
         this.userService = userService;
@@ -71,6 +81,7 @@ public class DocumentDetailDialog extends Dialog {
         this.pluginService = pluginService;
         this.similarityService = similarityService;
         this.fieldExtractionService = fieldExtractionService;
+        this.fileStoreService = fileStoreService;
         
         initializeDialog();
     }
@@ -116,7 +127,7 @@ public class DocumentDetailDialog extends Dialog {
             if (e.getValue() != null && !e.getValue().getId().equals(reloadedDoc.getId())) {
                 close();
                 new DocumentDetailDialog(e.getValue(), documentService, userService, 
-                    contentService, pluginService, similarityService, fieldExtractionService).open();
+                    contentService, pluginService, similarityService, fieldExtractionService, fileStoreService).open();
             }
         });
         
@@ -289,7 +300,13 @@ public class DocumentDetailDialog extends Dialog {
         
         pluginsMenu.setEnabled(hasTextContent);
         
-        HorizontalLayout contentToolbar = new HorizontalLayout(viewContentButton, extractFieldsButton, pluginsMenu);
+        // Upload Content button
+        Button uploadContentButton = new Button("Upload Content", new Icon(VaadinIcon.UPLOAD));
+        uploadContentButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        uploadContentButton.addClickListener(e -> openUploadContentDialog(reloadedDoc));
+        
+        HorizontalLayout contentToolbar = new HorizontalLayout(
+            viewContentButton, uploadContentButton, extractFieldsButton, pluginsMenu);
         
         // Version control buttons
         Button createMajorVersionButton = new Button("Create Major Version", new Icon(VaadinIcon.PLUS_CIRCLE));
@@ -1060,5 +1077,228 @@ public class DocumentDetailDialog extends Dialog {
         
         logger.info("Dialog refreshed. Content count: {}", 
             reloadedDoc.getContents() != null ? reloadedDoc.getContents().size() : 0);
+    }
+    
+    /**
+     * Open upload content dialog with custom naming and rendition type selection
+     */
+    private void openUploadContentDialog(Document document) {
+        Dialog uploadDialog = new Dialog();
+        uploadDialog.setWidth("600px");
+        
+        H2 title = new H2("Upload Content");
+        
+        Span docInfo = new Span("Document: " + document.getName() + " (v" + 
+                               document.getMajorVersion() + "." + document.getMinorVersion() + ")");
+        docInfo.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        
+        // Content Name field - initially empty, user provides custom name
+        TextField nameField = new TextField("Content Name");
+        nameField.setPlaceholder("Enter custom name");
+        nameField.setRequired(true);
+        nameField.setWidthFull();
+        nameField.setHelperText("Type a descriptive name for this content");
+        
+        // Rendition Type selection
+        RadioButtonGroup<String> renditionType = new RadioButtonGroup<>();
+        renditionType.setLabel("Rendition Type");
+        renditionType.setItems("Primary", "Secondary");
+        renditionType.setValue("Primary");
+        
+        Span renditionHelp = new Span(
+            "Primary: Main content file. Secondary: Derived content (e.g., text extracted from PDF).");
+        renditionHelp.getStyle()
+            .set("font-size", "var(--lumo-font-size-s)")
+            .set("color", "var(--lumo-secondary-text-color)");
+        
+        // Storage type selection
+        RadioButtonGroup<String> storageType = new RadioButtonGroup<>();
+        storageType.setLabel("Storage Type");
+        storageType.setItems("Database", "File Store");
+        storageType.setValue("Database");
+        
+        // File store selection (initially hidden)
+        ComboBox<FileStore> fileStoreCombo = new ComboBox<>("File Store");
+        fileStoreCombo.setItems(fileStoreService.findAll());
+        fileStoreCombo.setItemLabelGenerator(FileStore::getName);
+        fileStoreCombo.setVisible(false);
+        fileStoreCombo.setWidthFull();
+        
+        storageType.addValueChangeListener(e -> {
+            boolean isFileStore = "File Store".equals(e.getValue());
+            fileStoreCombo.setVisible(isFileStore);
+            if (isFileStore && fileStoreCombo.getValue() == null) {
+                fileStoreCombo.getListDataView().getItems().findFirst().ifPresent(fileStoreCombo::setValue);
+            }
+        });
+        
+        // File upload component
+        MemoryBuffer buffer = new MemoryBuffer();
+        Upload upload = new Upload(buffer);
+        upload.setMaxFiles(1);
+        upload.setAcceptedFileTypes(
+            "application/pdf", ".pdf",
+            "text/plain", ".txt",
+            "application/msword", ".doc",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx",
+            "image/*"
+        );
+        
+        Span uploadStatus = new Span();
+        uploadStatus.setVisible(false);
+        
+        // Button to use filename as name
+        Button useFilenameButton = new Button("Use Filename");
+        useFilenameButton.setVisible(false);
+        useFilenameButton.addThemeVariants(ButtonVariant.LUMO_SMALL);
+        
+        upload.addSucceededListener(event -> {
+            uploadStatus.setText("File ready: " + event.getFileName());
+            uploadStatus.getStyle().set("color", "var(--lumo-success-color)");
+            uploadStatus.setVisible(true);
+            
+            // Show button to use filename instead of auto-filling
+            useFilenameButton.setVisible(true);
+            useFilenameButton.setText("Use Filename: " + event.getFileName());
+            useFilenameButton.addClickListener(e -> {
+                nameField.setValue(event.getFileName());
+            });
+        });
+        
+        upload.addFileRejectedListener(event -> {
+            uploadStatus.setText("File rejected: " + event.getErrorMessage());
+            uploadStatus.getStyle().set("color", "var(--lumo-error-color)");
+            uploadStatus.setVisible(true);
+        });
+        
+        // Buttons
+        Button cancelButton = new Button("Cancel", e -> uploadDialog.close());
+        
+        Button saveButton = new Button("Upload", e -> {
+            // Validation
+            if (nameField.isEmpty()) {
+                Notification.show("Please provide a content name", 3000, 
+                    Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                return;
+            }
+            
+            try {
+                if (buffer.getInputStream().available() == 0) {
+                    Notification.show("Please select a file to upload", 
+                        3000, Notification.Position.BOTTOM_START)
+                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                    return;
+                }
+                
+                // Create a custom MultipartFile from the buffer with custom name
+                byte[] fileBytes = buffer.getInputStream().readAllBytes();
+                String customName = nameField.getValue(); // Use custom name provided by user
+                String contentType = buffer.getFileData().getMimeType();
+                
+                MultipartFile multipartFile = new MultipartFile() {
+                    @Override
+                    public String getName() { return customName; }
+                    
+                    @Override
+                    public String getOriginalFilename() { return customName; }
+                    
+                    @Override
+                    public String getContentType() { return contentType; }
+                    
+                    @Override
+                    public boolean isEmpty() { return fileBytes.length == 0; }
+                    
+                    @Override
+                    public long getSize() { return fileBytes.length; }
+                    
+                    @Override
+                    public byte[] getBytes() { return fileBytes; }
+                    
+                    @Override
+                    public java.io.InputStream getInputStream() { 
+                        return new java.io.ByteArrayInputStream(fileBytes); 
+                    }
+                    
+                    @Override
+                    public void transferTo(java.io.File dest) throws java.io.IOException, IllegalStateException {
+                        throw new UnsupportedOperationException();
+                    }
+                };
+                
+                // Create content based on storage type
+                Content content;
+                boolean isPrimary = "Primary".equals(renditionType.getValue());
+                
+                if ("Database".equals(storageType.getValue())) {
+                    content = contentService.createContentInDatabase(multipartFile, document);
+                } else {
+                    if (fileStoreCombo.getValue() == null) {
+                        Notification.show("Please select a file store", 
+                            3000, Notification.Position.BOTTOM_START)
+                            .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                        return;
+                    }
+                    content = contentService.createContentInFileStore(
+                        multipartFile, document, fileStoreCombo.getValue().getId()
+                    );
+                }
+                
+                // Set rendition type
+                content.setPrimary(isPrimary);
+                contentService.save(content);
+                
+                Notification.show("Content uploaded successfully as " + 
+                    (isPrimary ? "Primary" : "Secondary") + " rendition",
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+                
+                uploadDialog.close();
+                
+                // Store the document ID
+                Long documentId = document.getId();
+                
+                // Close this dialog
+                close();
+                
+                // Reopen with fresh document to show new content
+                Document freshDoc = documentService.findById(documentId);
+                new DocumentDetailDialog(freshDoc, documentService, userService,
+                    contentService, pluginService, similarityService, 
+                    fieldExtractionService, fileStoreService).open();
+                
+            } catch (Exception ex) {
+                logger.error("Failed to upload content", ex);
+                Notification.show("Failed to upload content: " + ex.getMessage(), 
+                    3000, Notification.Position.BOTTOM_START)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            }
+        });
+        saveButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        
+        // Layout
+        FormLayout formLayout = new FormLayout();
+        formLayout.add(docInfo, nameField, renditionType, renditionHelp, 
+                      storageType, fileStoreCombo, upload, uploadStatus, useFilenameButton);
+        formLayout.setColspan(docInfo, 2);
+        formLayout.setColspan(nameField, 2);
+        formLayout.setColspan(renditionHelp, 2);
+        formLayout.setColspan(upload, 2);
+        formLayout.setColspan(uploadStatus, 2);
+        formLayout.setColspan(useFilenameButton, 2);
+        
+        HorizontalLayout buttonLayout = new HorizontalLayout(cancelButton, saveButton);
+        buttonLayout.setJustifyContentMode(FlexComponent.JustifyContentMode.END);
+        buttonLayout.setWidthFull();
+        buttonLayout.setPadding(true);
+        
+        VerticalLayout dialogLayout = new VerticalLayout(
+            title, new Hr(), formLayout, buttonLayout
+        );
+        dialogLayout.setPadding(false);
+        dialogLayout.setSpacing(false);
+        
+        uploadDialog.add(dialogLayout);
+        uploadDialog.open();
     }
 }

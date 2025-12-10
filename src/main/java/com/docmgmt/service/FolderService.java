@@ -365,24 +365,72 @@ public class FolderService extends AbstractSysObjectService<Folder, FolderReposi
     }
     
     /**
+     * Find folder by ID with items and child folders eagerly loaded for tile display
+     * This method ensures both items and child folder items are initialized
+     * @param id The folder ID
+     * @return The folder with items and children loaded
+     */
+    @Transactional(readOnly = true)
+    public Folder findByIdForTileDisplay(Long id) {
+        return repository.findByIdWithItemsAndChildren(id)
+            .map(folder -> {
+                // Initialize child folder items as well
+                if (folder.getChildFolders() != null) {
+                    for (Folder child : folder.getChildFolders()) {
+                        if (child.getItems() != null) {
+                            child.getItems().size();
+                        }
+                    }
+                }
+                return folder;
+            })
+            .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Folder not found with id: " + id));
+    }
+    
+    /**
+     * Find all folders by name with items and child folders eagerly loaded for tile display
+     * @param name The folder name
+     * @return List of folders with items and children loaded
+     */
+    @Transactional(readOnly = true)
+    public List<Folder> findByNameForTileDisplay(String name) {
+        List<Folder> folders = repository.findByNameWithItemsAndChildren(name);
+        // Initialize child folder items as well
+        folders.forEach(folder -> {
+            if (folder.getChildFolders() != null) {
+                for (Folder child : folder.getChildFolders()) {
+                    if (child.getItems() != null) {
+                        child.getItems().size();
+                    }
+                }
+            }
+        });
+        return folders;
+    }
+    
+    /**
      * Update folder properties including authors
      * This method ensures all updates happen within a single transaction
      * @param folderId The folder ID
      * @param name The new name
      * @param path The new path
      * @param description The new description
+     * @param url The new URL
+     * @param color The new color
      * @param owner The new owner
      * @param authors The new set of authors
      * @return The updated folder
      */
     @Transactional
-    public Folder updateFolder(Long folderId, String name, String path, String description, 
+    public Folder updateFolder(Long folderId, String name, String path, String description, String url, String color,
                               com.docmgmt.model.User owner, java.util.Set<com.docmgmt.model.User> authors) {
         Folder folder = findById(folderId);
         
         folder.setName(name);
         folder.setPath(path);
         folder.setDescription(description);
+        folder.setUrl(url);
+        folder.setColor(color);
         folder.setOwner(owner);
         
         // Update authors within transaction
