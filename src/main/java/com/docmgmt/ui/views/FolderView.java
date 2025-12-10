@@ -93,18 +93,21 @@ public class FolderView extends VerticalLayout {
     private Button createFolderButton;
     private Button createSubfolderButton;
     private Button addDocumentButton;
-    private Button linkDocumentButton;
+    private Button editFolderButton;
     private Button removeLinkButton;
     private Button transformButton;
     private Button transformFolderButton;
-    private Button moveFoldersButton;
-    private Button moveToRootButton;
-    private Button rebuildIndexButton;
-    private Button batchExtractFieldsButton;
-    private Button importDirectoryButton;
-    private Button editFolderButton;
-    private Button viewTilesButton;
-    private Button configureTilesButton;
+    private MenuBar actionsMenu;
+    private MenuBar viewMenu;
+    private MenuBar toolsMenu;
+    private MenuItem linkDocumentItem;
+    private MenuItem moveFoldersItem;
+    private MenuItem moveToRootItem;
+    private MenuItem rebuildIndexItem;
+    private MenuItem batchExtractFieldsItem;
+    private MenuItem importDirectoryItem;
+    private MenuItem viewTilesItem;
+    private MenuItem configureTilesItem;
     
     private H3 currentFolderLabel;
     
@@ -152,7 +155,8 @@ public class FolderView extends VerticalLayout {
     }
     
     private HorizontalLayout createToolbar() {
-        createFolderButton = new Button("New Root Folder", new Icon(VaadinIcon.FOLDER_ADD));
+        // Primary action buttons - always visible
+        createFolderButton = new Button("New Root", new Icon(VaadinIcon.FOLDER_ADD));
         createFolderButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
         createFolderButton.addClickListener(e -> openCreateFolderDialog(null));
         
@@ -164,7 +168,7 @@ public class FolderView extends VerticalLayout {
             }
         });
         
-        addDocumentButton = new Button("New Document Here", new Icon(VaadinIcon.FILE_ADD));
+        addDocumentButton = new Button("New Document", new Icon(VaadinIcon.FILE_ADD));
         addDocumentButton.setEnabled(false);
         addDocumentButton.addClickListener(e -> {
             if (currentFolder != null) {
@@ -172,68 +176,80 @@ public class FolderView extends VerticalLayout {
             }
         });
         
-        linkDocumentButton = new Button("Link Existing Document", new Icon(VaadinIcon.LINK));
-        linkDocumentButton.setEnabled(false);
-        linkDocumentButton.addClickListener(e -> {
-            if (currentFolder != null) {
-                openLinkDocumentDialog();
-            }
-        });
-        
-        moveFoldersButton = new Button("Move Selected", new Icon(VaadinIcon.FOLDER_OPEN));
-        moveFoldersButton.setEnabled(false);
-        moveFoldersButton.addClickListener(e -> openMoveFoldersDialog());
-        
-        moveToRootButton = new Button("Move to Root", new Icon(VaadinIcon.LEVEL_UP));
-        moveToRootButton.setEnabled(false);
-        moveToRootButton.addClickListener(e -> moveSelectedToRoot());
-        
-        rebuildIndexButton = new Button("Rebuild Index", new Icon(VaadinIcon.REFRESH));
-        rebuildIndexButton.addThemeVariants(ButtonVariant.LUMO_SUCCESS);
-        rebuildIndexButton.setEnabled(false);
-        rebuildIndexButton.addClickListener(e -> openRebuildIndexDialog());
-        
-        batchExtractFieldsButton = new Button("AI Extract Fields (Batch)", new Icon(VaadinIcon.LIGHTBULB));
-        batchExtractFieldsButton.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
-        batchExtractFieldsButton.setEnabled(false);
-        batchExtractFieldsButton.addClickListener(e -> batchExtractFields());
-        
-        importDirectoryButton = new Button("Import from Directory", new Icon(VaadinIcon.DOWNLOAD));
-        importDirectoryButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-        importDirectoryButton.setEnabled(false);
-        importDirectoryButton.addClickListener(e -> openImportDirectoryDialog());
-        
-        editFolderButton = new Button("Edit Folder", new Icon(VaadinIcon.EDIT));
+        editFolderButton = new Button(new Icon(VaadinIcon.EDIT));
         editFolderButton.setEnabled(false);
+        editFolderButton.setTooltipText("Edit Folder");
         editFolderButton.addClickListener(e -> {
             if (currentFolder != null) {
                 openEditFolderDialog(currentFolder);
             }
         });
         
-        viewTilesButton = new Button("View as Tiles", new Icon(VaadinIcon.GRID_SMALL));
-        viewTilesButton.addThemeVariants(ButtonVariant.LUMO_SUCCESS);
-        viewTilesButton.setEnabled(false);
-        viewTilesButton.addClickListener(e -> {
+        // Actions menu
+        actionsMenu = new MenuBar();
+        MenuItem actionsMenuItem = actionsMenu.addItem("Actions");
+        actionsMenuItem.addComponentAsFirst(new Icon(VaadinIcon.ELLIPSIS_DOTS_V));
+        SubMenu actionsSubMenu = actionsMenuItem.getSubMenu();
+        
+        linkDocumentItem = actionsSubMenu.addItem("Link Existing Document", e -> {
+            if (currentFolder != null) {
+                openLinkDocumentDialog();
+            }
+        });
+        linkDocumentItem.addComponentAsFirst(new Icon(VaadinIcon.LINK));
+        linkDocumentItem.setEnabled(false);
+        
+        moveFoldersItem = actionsSubMenu.addItem("Move Selected", e -> openMoveFoldersDialog());
+        moveFoldersItem.addComponentAsFirst(new Icon(VaadinIcon.FOLDER_OPEN));
+        moveFoldersItem.setEnabled(false);
+        
+        moveToRootItem = actionsSubMenu.addItem("Move to Root", e -> moveSelectedToRoot());
+        moveToRootItem.addComponentAsFirst(new Icon(VaadinIcon.LEVEL_UP));
+        moveToRootItem.setEnabled(false);
+        
+        // View menu
+        viewMenu = new MenuBar();
+        MenuItem viewMenuItem = viewMenu.addItem("View");
+        viewMenuItem.addComponentAsFirst(new Icon(VaadinIcon.EYE));
+        SubMenu viewSubMenu = viewMenuItem.getSubMenu();
+        
+        viewTilesItem = viewSubMenu.addItem("View as Tiles", e -> {
             if (currentFolder != null) {
                 getUI().ifPresent(ui -> ui.navigate("tiles/" + currentFolder.getName()));
             }
         });
+        viewTilesItem.addComponentAsFirst(new Icon(VaadinIcon.GRID_SMALL));
+        viewTilesItem.setEnabled(false);
         
-        configureTilesButton = new Button("Configure Tiles", new Icon(VaadinIcon.COG));
-        configureTilesButton.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
-        configureTilesButton.setEnabled(false);
-        configureTilesButton.addClickListener(e -> {
+        configureTilesItem = viewSubMenu.addItem("Configure Tiles", e -> {
             if (currentFolder != null) {
                 openTileConfigurationDialog();
             }
         });
+        configureTilesItem.addComponentAsFirst(new Icon(VaadinIcon.COG));
+        configureTilesItem.setEnabled(false);
+        
+        // Tools menu
+        toolsMenu = new MenuBar();
+        MenuItem toolsMenuItem = toolsMenu.addItem("Tools");
+        toolsMenuItem.addComponentAsFirst(new Icon(VaadinIcon.TOOLS));
+        SubMenu toolsSubMenu = toolsMenuItem.getSubMenu();
+        
+        rebuildIndexItem = toolsSubMenu.addItem("Rebuild Index", e -> openRebuildIndexDialog());
+        rebuildIndexItem.addComponentAsFirst(new Icon(VaadinIcon.REFRESH));
+        rebuildIndexItem.setEnabled(false);
+        
+        batchExtractFieldsItem = toolsSubMenu.addItem("AI Extract Fields (Batch)", e -> batchExtractFields());
+        batchExtractFieldsItem.addComponentAsFirst(new Icon(VaadinIcon.LIGHTBULB));
+        batchExtractFieldsItem.setEnabled(false);
+        
+        importDirectoryItem = toolsSubMenu.addItem("Import from Directory", e -> openImportDirectoryDialog());
+        importDirectoryItem.addComponentAsFirst(new Icon(VaadinIcon.DOWNLOAD));
+        importDirectoryItem.setEnabled(false);
         
         HorizontalLayout toolbar = new HorizontalLayout(
-            createFolderButton, createSubfolderButton, editFolderButton, addDocumentButton, linkDocumentButton,
-            new Hr(), viewTilesButton, configureTilesButton,
-            new Hr(), moveFoldersButton, moveToRootButton,
-            new Hr(), rebuildIndexButton, batchExtractFieldsButton, importDirectoryButton
+            createFolderButton, createSubfolderButton, addDocumentButton, editFolderButton,
+            actionsMenu, viewMenu, toolsMenu
         );
         toolbar.setDefaultVerticalComponentAlignment(FlexComponent.Alignment.CENTER);
         toolbar.setPadding(true);
@@ -281,8 +297,8 @@ public class FolderView extends VerticalLayout {
         folderTree.addSelectionListener(event -> {
             // Update toolbar buttons based on selection
             boolean hasSelection = !event.getAllSelectedItems().isEmpty();
-            moveFoldersButton.setEnabled(hasSelection);
-            moveToRootButton.setEnabled(hasSelection);
+            moveFoldersItem.setEnabled(hasSelection);
+            moveToRootItem.setEnabled(hasSelection);
             
             // Single selection updates the current folder for content view
             event.getFirstSelectedItem().ifPresent(this::selectFolder);
@@ -397,7 +413,7 @@ public class FolderView extends VerticalLayout {
             long docCount = itemsGrid.getSelectedItems().stream()
                 .filter(item -> item instanceof Document)
                 .count();
-            batchExtractFieldsButton.setEnabled(docCount > 0);
+            batchExtractFieldsItem.setEnabled(docCount > 0);
         });
         
         // Add double-click listener to open document details
@@ -420,12 +436,12 @@ public class FolderView extends VerticalLayout {
         createSubfolderButton.setEnabled(true);
         editFolderButton.setEnabled(true);
         addDocumentButton.setEnabled(true);
-        linkDocumentButton.setEnabled(true);
-        viewTilesButton.setEnabled(true);
-        configureTilesButton.setEnabled(true);
+        linkDocumentItem.setEnabled(true);
+        viewTilesItem.setEnabled(true);
+        configureTilesItem.setEnabled(true);
         transformFolderButton.setEnabled(true);
-        rebuildIndexButton.setEnabled(true);
-        importDirectoryButton.setEnabled(true);
+        rebuildIndexItem.setEnabled(true);
+        importDirectoryItem.setEnabled(true);
         refreshFolderContents();
     }
     
