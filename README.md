@@ -112,6 +112,28 @@ mvn clean package -Pproduction
 java -jar target/document-management-0.0.1-SNAPSHOT.jar
 ```
 
+### macOS Native Application
+
+Build a native macOS application with DMG installer:
+
+```bash
+./build-mac-dmg.sh
+```
+
+This creates a self-contained macOS app with:
+- Native .app bundle
+- Bundled Java runtime (no separate Java installation needed)
+- DMG installer for easy distribution
+- Automatic browser launch
+- Data storage in `~/Library/Application Support/DocMgmt/`
+
+**Output**: `target/dist/DocMgmt-1.0.0.dmg` (~250-350 MB)
+
+**Documentation**:
+- Quick Start: [QUICK_START_MAC.md](QUICK_START_MAC.md)
+- Complete Guide: [BUILD_MAC.md](BUILD_MAC.md)
+- Permissions & Security: [MACOS_PERMISSIONS.md](MACOS_PERMISSIONS.md)
+
 ## Command Line Interface
 
 ### Overview

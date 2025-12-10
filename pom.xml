@@ -233,6 +233,68 @@
                 <vaadin.productionMode>true</vaadin.productionMode>
             </properties>
         </profile>
+        
+        <!-- Profile for creating macOS native application -->
+        <profile>
+            <id>mac-app</id>
+            <properties>
+                <vaadin.productionMode>true</vaadin.productionMode>
+                <app.name>DocMgmt</app.name>
+                <app.version>1.0.0</app.version>
+                <app.vendor>DocMgmt Project</app.vendor>
+            </properties>
+            <build>
+                <plugins>
+                    <!-- Package as native macOS app with jpackage -->
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <version>1.6.0</version>
+                        <configuration>
+                            <name>${app.name}</name>
+                            <appVersion>${app.version}</appVersion>
+                            <vendor>${app.vendor}</vendor>
+                            <destination>${project.build.directory}/dist</destination>
+                            <module>com.docmgmt/com.docmgmt.DocumentManagementApplication</module>
+                            <runtimeImage>${java.home}</runtimeImage>
+                            <input>${project.build.directory}</input>
+                            <mainJar>${project.build.finalName}.jar</mainJar>
+                            <mainClass>com.docmgmt.DocumentManagementApplication</mainClass>
+                            
+                            <!-- macOS specific options -->
+                            <type>DMG</type>
+                            <icon>${project.basedir}/packaging/macos/app-icon.icns</icon>
+                            
+                            <!-- JVM options -->
+                            <javaOptions>
+                                <option>-Xmx2048m</option>
+                                <option>-Xms512m</option>
+                                <option>-Dserver.port=8082</option>
+                                <option>-Dspring.profiles.active=production</option>
+                                <option>-Djava.io.tmpdir=$TMPDIR</option>
+                                <option>-Duser.home=$HOME</option>
+                            </javaOptions>
+                            
+                            <!-- macOS specific settings -->
+                            <macPackageName>${app.name}</macPackageName>
+                            <macPackageIdentifier>com.docmgmt.app</macPackageIdentifier>
+                            <macCategoryType>public.app-category.productivity</macCategoryType>
+                            <macEntitlements>${project.basedir}/packaging/macos/entitlements.plist</macEntitlements>
+                            <resourceDir>${project.basedir}/packaging/macos</resourceDir>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>mac</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jpackage</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 </project>
 
