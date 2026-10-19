@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Docmgmt logo" width="180">
+</p>
+
 # Document Management System
 
 A comprehensive document management system with versioning support, flexible storage options, full-text search, and a modern web UI.
